@@ -252,6 +252,7 @@ System.Console.WriteLine $Stamp
 * .NET SDK (recommended: .NET 8+)
 * Powershell 7 (for first build)
 * Alternatively, EasyShell binary
+* Alternatively, build directly with `dotnet`
 
 ### Build
 
@@ -265,6 +266,12 @@ Or using `easy` itself:
 
 ```easy
 easy ./BuildEasyShell.easy
+```
+
+Or using `dotnet`:
+
+```easy
+dotnet run -- ./BuildScripts/BuildEasyShell.easy
 ```
 
 Expected folder structure:
@@ -325,3 +332,7 @@ MIT
 2. Add tests for new language features
 3. Keep scripts in `Examples/` small and focused
 4. Open a PR with a short description of behavior changes
+
+## See Also
+
+* [Visual Studio Code syntax highlight extension](https://marketplace.visualstudio.com/items?itemName=Methodox.easyshell)

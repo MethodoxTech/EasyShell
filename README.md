@@ -1,24 +1,29 @@
 ﻿# Easy Shell (`easy`)
 
-Type: Shell Scripting Language
+Type: Shell Scripting Language  
+Extensions: (Preferred) `.easy`, (Candidate) `.es`
+Version: 0.1.0
 
-> A simple shell that works cross-platform.
-> It can't get easier.
+> A simple shell that works cross-platform. It can't get easier.
 
-EasyShell brings simplicity to process automation - with a handful of syntax, it enables automating common build tasks.
+`EasyShell` brings simplicity to process automation - with a handful of syntax, it enables automating common build tasks.
 
 Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 
 * Shell-like “one command per line” scripting
-* Strongly-typed global variables
+* Strongly-typed **global variables**
 * Control-flow keywords (`IF/ELSE/WHILE/FUNC/CALL`)
 * Direct invocation of fully-qualified .NET members (methods, fields, properties)
-* Sub-command expressions using parentheses for inline evaluation
+* **Sub-command expressions** using parentheses for inline evaluation
 
-Design note:
+## Design Notes
 
-* It's minimal and for lazy people - no advanced bash like functions and mostly for scripting use.
-* Serve as a successor to MiniParcel for shell purpose so MiniParcel can focus more on a "human-readable graph language".
+* It's minimal and for lazy people - no advanced bash like functions and mostly for scripting use. Also less risk of "forgetting some keyword/syntax" (like often with PowerShell).
+* Serve as a successor to `MiniParcel` for shell purpose so `MiniParcel` can focus more on a "human-readable graph language".
+
+* **Default value interchange format is string**, but variables enforce a declared type.
+* Reflection invocation attempts to **match overloads by argument count + best conversion fit**.
+* External executable calls return **stdout** (or stderr when stdout is empty).
 
 ## Features
 
@@ -38,9 +43,24 @@ Design note:
 
 ## Usage Guide
 
-### Examples
+### Example Script
 
-**Distinguish between argument and expression**
+```easy
+# Get time as handle
+HANDLEVAR NOW System.DateTime.Now
+
+# Convert time to string via instance call
+STRINGVAR DATE (CALL $NOW ToString)
+
+# Prepare content via static call
+STRINGVAR VALUE (System.String.Format "Current time: {0}" $DATE)
+
+# Write file
+STRINGVAR PATH "C:/Value"
+System.IO.File.WriteAllText $PATH $VALUE
+```
+
+### Distinguish between argument and expression
 
 ```easy
 es> $Date = (format "{0:yyyyMMdd}" (GetDate))
@@ -54,34 +74,20 @@ es> print $date
 GetDate
 ```
 
-## Publish
-
-Use pwsh/easyshell: `Automation\Easy`.
-
 ## Quick Start
-
-### Prerequisites
-
-* .NET SDK (recommended: .NET 8+)
-
-### Build
-
-```bash
-dotnet build
-```
 
 ### Run
 
 ```bash
-dotnet run # REPL
-dotnet run -- path/to/script.es
+easy # REPL
+easy path/to/script.easy
 ```
 
 ### Help / Version
 
 ```bash
-dotnet run -- --help
-dotnet run -- --version
+easy --help
+easy --version
 ```
 
 ## Language Overview
@@ -90,7 +96,7 @@ dotnet run -- --version
 
 Anything after `#` is ignored.
 
-```text
+```easy
 # This is a comment
 STRING Name "Charles"  # trailing comment
 ```
@@ -99,7 +105,7 @@ STRING Name "Charles"  # trailing comment
 
 Declare variables with a type command:
 
-```text
+```easy
 INTVAR Count 10
 BOOLVAR Enabled TRUE
 DOUBLEVAR Pi 3.14159
@@ -120,14 +126,14 @@ Reference: `$Name`
 
 Assignment:
 
-```text
+```easy
 $Count = 11
 $Title = "Updated"
 ```
 
 Values can be literals or expressions:
 
-```text
+```easy
 $Title = (System.String.Format "Count={0}" $Count)
 ```
 
@@ -150,7 +156,7 @@ A line is generally a command invocation:
 
 Any argument may be an expression: a parenthesized command that is evaluated first and yields a value.
 
-```text
+```easy
 STRING X "10"
 BOOL IsTen (== $X 10)
 ```
@@ -161,17 +167,17 @@ BOOL IsTen (== $X 10)
 
 Examples:
 
-```text
+```easy
 BOOL A (== 5 5)
 BOOL B (> 10 2)
 BOOL C (<= 3 3)
 ```
 
-## Control Flow
+### Control Flow
 
-### IF / ELSEIF / ELSE / END
+#### IF / ELSEIF / ELSE / END
 
-```text
+```easy
 INT X 10
 
 IF (>= $X 10)
@@ -183,9 +189,9 @@ ELSE
 END
 ```
 
-### WHILE / END
+#### WHILE / END
 
-```text
+```easy
 INT I 0
 
 WHILE (< $I 3)
@@ -196,110 +202,126 @@ END
 
 > Note: If arithmetic commands are not implemented yet, you can update values using .NET calls you provide, or extend the engine with `+`, `-`, etc.
 
-## Functions
+### Functions
 
 Functions are named blocks with global variable access. They do not take arguments; “return values” are done by setting variables.
 
-### Define a function
+#### Define a function
 
-```text
+```easy
 FUNC WriteGreeting
   System.Console.WriteLine "Hello from a function"
 END
 ```
 
-### Call a function
+#### Call a function
 
-```text
+```easy
 CALL WriteGreeting
 ```
 
-## Calling .NET
+### Calling .NET
 
-### Static members (fully qualified)
+#### Static members (fully qualified)
 
-```text
+```easy
 System.Console.WriteLine "Hello"
 STRING S (System.String.Format "X={0}" 42)
 ```
 
 Static property/field access (no arguments):
 
-```text
+```easy
 HANDLEVAR Now System.DateTime.Now
 ```
 
-### Instance calls via HANDLE
+#### Instance calls via HANDLE
 
 Use `CALL <handle> <method> [args...]`:
 
-```text
+```easy
 HANDLEVAR Now System.DateTime.Now
 STRINGVAR Stamp (CALL $Now ToString)
 System.Console.WriteLine $Stamp
 ```
 
-## Example Script
+## Publish
 
-```text
-# Get time as handle
-HANDLEVAR NOW System.DateTime.Now
+### Prerequisites
 
-# Convert time to string via instance call
-STRINGVAR DATE (CALL $NOW ToString)
+* .NET SDK (recommended: .NET 8+)
+* Powershell 7 (for first build)
+* Alternatively, EasyShell binary
 
-# Prepare content via static call
-STRINGVAR VALUE (System.String.Format "Current time: {0}" $DATE)
+### Build
 
-# Write file
-STRINGVAR PATH "C:/Value"
-System.IO.File.WriteAllText $PATH $VALUE
+Use `pwsh` from the `BuildScripts` folder:
+
+```powershell
+pwsh ./BuildEasyShell.ps1
 ```
 
-## Project Structure
+Or using `easy` itself:
 
-Recommended minimal structure:
-
-```text
-.
-├─ EasyShell/
-│  ├─ Program.cs
-│  └─ EasyShell.csproj
-└─ examples/
-   └─ time_to_file.es
+```easy
+easy ./BuildEasyShell.easy
 ```
 
-## Design Notes
+Expected folder structure:
 
-* **Default value interchange format is string**, but variables enforce a declared type.
-* Reflection invocation attempts to **match overloads by argument count + best conversion fit**.
-* External executable calls return **stdout** (or stderr when stdout is empty).
+```txt
+<build-root>/
+├─ External/
+│  └─ EasyShell/
+│     ├─ BuildScripts/
+│     │  ├─ BuildEasyShell.easy
+│     │  └─ BuildEasyShell.ps1
+│     ├─ EasyShell.csproj
+│     └─ ...
+├─ Publish/
+│  ├─ Utilities/
+│  │  └─ EasyShell/
+│  │     └─ Current/
+│  └─ Packages/
+```
 
-## Extending Easy Shell
+The build script lives directly under `External/EasyShell/BuildScripts`.
 
-Common next additions:
+It uses:
 
-* Arithmetic commands: `+`, `-`, `*`, `/`
-* Boolean ops: `AND`, `OR`, `NOT`
-* `RETURN` keyword for function short-circuiting
-* Better process invocation on Windows (e.g., `cmd /c` fallback)
-* Module import (`IMPORT path.es`)
+```powershell
+$BuildRoot = (Get-Item -LiteralPath $PSScriptRoot).Parent.Parent.Parent.FullName
+```
+
+So `BuildScripts` must be three levels below `<repo-root>`:
+
+```txt
+<build-root>/External/EasyShell/BuildScripts
+```
+
+The script publishes `External/EasyShell` into:
+
+```txt
+<build-root>/Publish/Utilities/EasyShell/Current
+```
+
+Then creates a package in:
+
+```txt
+<build-root>/Publish/Packages
+```
+
+## Changelog
+
+* v0.1.0: Initial setup.
 
 ## License
 
-Choose one:
-
-* MIT
-* Apache-2.0
-* Proprietary / All rights reserved
+MIT
 
 ## Contributing
 
 1. Fork / branch
 2. Add tests for new language features
-3. Keep scripts in `examples/` small and focused
+3. Keep scripts in `Examples/` small and focused
 4. Open a PR with a short description of behavior changes
-
-## References
-
-* (Gen AI) Archive: `20251214 Easy Shell`

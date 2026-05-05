@@ -1,3 +1,13 @@
+## Extending Easy Shell
+
+Potential additions:
+
+* Arithmetic commands: `+`, `-`, `*`, `/`
+* Boolean ops: `AND`, `OR`, `NOT`
+* `RETURN` keyword for function short-circuiting
+* Better process invocation on Windows (e.g., `cmd /c` fallback)
+* Module import (`IMPORT path.es`)
+
 ## TODO
 
 Current:

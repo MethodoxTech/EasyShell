@@ -1,0 +1,51 @@
+# A script to build Easy Shell with dotnet for publish
+# To build with this script: easy "BuildEasyShell.easy"
+# There is no need to set working directory etc.
+
+# Retrieve current script location
+$PrevPath = (cwd)
+
+# Start
+print "Publish for Final Packaging build."
+
+# Determine publish folder
+cd $EasyScriptRoot
+stringvar PublishFolder (JoinPath $EasyScriptRoot "\..\..\..\Publish\Utilities\EasyShell\Current")
+
+# Delete current data
+remove $PublishFolder
+
+# Publish Executable
+dotnet publish (JoinPath $EasyScriptRoot "\..\..\..\External\EasyShell") --use-current-runtime --self-contained --output $PublishFolder
+
+# Validation
+assert (EXISTS (JoinPath $PublishFolder "easy.pdb")) "Build failed."
+
+# Pick an OS tag
+IF $IsWindows
+    stringvar OS "win"
+ELSEIF $IsLinux
+    stringvar OS "linux"
+ELSEIF $IsMacOS
+    stringvar OS "osx"
+ELSE
+    stringvar OS "unknown"
+END
+
+# Pick an architecture
+# Alternative: stringvar Arch (?: (System.Environment.Is64BitProcess) "x64" "x86")
+IF System.Environment.Is64BitProcess
+    stringvar Arch "x64"
+ELSE
+    stringvar Arch "x86"
+END
+
+# Runtime name, e.g. "win-x64"
+$rid = (format "{0}-{1}" $OS $Arch)
+
+# Create archive
+$Date = (format "{0:yyyyMMdd}" (GetDate))
+$ArchiveFolder = (JoinPath $EasyScriptRoot "\..\..\..\Publish\Packages")
+$ArchivePath = (JoinPath $ArchiveFolder (format "\Utility_EasyShell_{0}_B{1}.zip" $rid $date))
+mkdir $ArchiveFolder
+zip $PublishFolder $ArchivePath

@@ -1,0 +1,161 @@
+﻿using EasyShell.Exceptions;
+using System;
+using System.IO;
+
+namespace EasyShell
+{
+    public static class Program
+    {
+        #region Configurations
+        private const string Version = "0.1.0";
+
+        private static readonly string HelpText = """
+            Easy Shell (easyshell) - a tiny scripting language.
+
+            Usage:
+              easyshell <script.es>
+              easyshell --help
+              easyshell --version
+              easyshell --repl
+
+            REPL:
+              - Type commands line by line.
+              - Multi-line blocks (IF/WHILE/FUNC) are entered until END.
+              - REPL commands:
+                  :help  :vars  :funcs  :exit   # Exits the REPL
+
+            Language:
+              - Lines are commands, external executables, or fully-qualified C# member invocations.
+              - Comments start with '#'.
+              - Variables are global and case-insensitive.
+
+            Variable declarations (strongly typed):
+              INTVAR    Name Value
+              BOOLVAR   Name Value
+              STRINGVAR Name Value
+              DOUBLEVAR Name Value
+              HANDLEVAR Name <any>   # stores an object (e.g., System.DateTime.Now)
+
+            Variable reference:
+              $Name
+
+            Variable assignment:
+              $Name = ValueOrExpression
+
+            Expressions (sub-commands):
+              Parenthesized command that evaluates to a value:
+                (== $X 10)
+                (CALL $h ToString)
+                (System.String.Format "Time: {0}" (CALL $now ToString))
+
+            Control flow:
+              IF <condition>
+                ...
+              ELSEIF <condition>
+                ...
+              ELSE
+                ...
+              END
+
+              WHILE <condition>
+                ...
+              END
+
+              FUNC <Name>
+                ...
+                # RETURN exits the function early
+              END
+
+              CALL <FuncName>
+              CALL <HandleExpr> <MethodName> [args...]
+
+            Execution control:
+              EXIT [code]
+                Immediately aborts script execution.
+                An optional integer code becomes the process exit code.
+
+              RETURN
+                Exits the current function only.
+                Has no effect outside of FUNC blocks.
+
+            Conditions:
+              - boolean literal TRUE/FALSE
+              - boolean-equivalent string ("true"/"false")
+              - expression in parentheses, e.g.: (== $X 10)
+
+            Built-in comparison commands:
+              ==  !=  >  <  >=  <=
+
+            Built-in logic commands:
+              NOT AND OR XOR ?? ?:
+
+            Global variables:
+              $EasyScriptRoot $IsWindows $IsLinux $IsMacOS
+            """;
+        #endregion
+
+        #region Entry
+        public static int Main(string[] args)
+        {
+            if (args.Contains("--help", StringComparer.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(HelpText);
+                return 0;
+            }
+
+            if (args.Contains("--version", StringComparer.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(Version);
+                return 0;
+            }
+
+            // Repl
+            if (args.Length == 0 || args.Contains("--repl", StringComparer.OrdinalIgnoreCase))
+            {
+                Runtime rt = GetPresetRuntime(Directory.GetCurrentDirectory());
+                return EasyShellRepl.Run(HelpText, Version, rt);
+            }
+
+            // Process shell script
+            string scriptPath = args[0];
+            if (!File.Exists(scriptPath))
+            {
+                Console.Error.WriteLine($"Script not found: {scriptPath}");
+                return 2;
+            }
+            try
+            {
+                string scriptRoot = Path.GetDirectoryName(Path.GetFullPath(scriptPath)) ?? "";
+                Runtime rt = GetPresetRuntime(scriptRoot);
+                EasyShellEngine engine = new(rt);
+
+                string text = File.ReadAllText(scriptPath);
+                int code = engine.Run(text, scriptPath);
+                return code;
+            }
+            catch (EasyShellException ex)
+            {
+                Console.Error.WriteLine($"(Error) {ex.Message}");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Unhandled error: {ex}");
+                return 3;
+            }
+        }
+        #endregion
+
+        #region Helpers
+        private static Runtime GetPresetRuntime(string scriptRoot)
+        {
+            Runtime rt = new();
+            rt.InjectString("$EasyScriptRoot", scriptRoot);
+            rt.InjectBool("$IsWindows", System.OperatingSystem.IsWindows());
+            rt.InjectBool("$IsLinux", System.OperatingSystem.IsLinux());
+            rt.InjectBool("$IsMacOS", System.OperatingSystem.IsMacOS());
+            return rt;
+        }
+        #endregion
+    }
+}

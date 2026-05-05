@@ -19,6 +19,7 @@ Current:
 Operator/Command:
 
 - [ ] `+` or `Append/Concat` or `||` for string concat (with many potential arguments), notice the syntax is function head first: `|| $a $b $c`
+- [ ] Support instance method as command name: e.g. `System.DateTime.AddDays $myTime 15`
 
 Enhance syntax:
 

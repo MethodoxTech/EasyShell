@@ -335,4 +335,5 @@ MIT
 
 ## See Also
 
+* [Methodox Tutorials on EasyShell (YouTube)](https://www.youtube.com/playlist?list=PLZFRaSxvnUEdnlB1-spH2cDQ-Paq3P3gZ)
 * [Visual Studio Code syntax highlight extension](https://marketplace.visualstudio.com/items?itemName=Methodox.easyshell)

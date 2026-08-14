@@ -86,8 +86,24 @@ namespace EasyShell
             Built-in comparison commands:
               ==  !=  >  <  >=  <=
 
+            Built-in arithmetic commands:
+              +  -  *  /  %  ^
+                Head-first, any number of operands: (+ 1 2 3)
+                '+' concatenates instead when an operand is not a number.
+
+            Built-in string commands:
+              ||  CONCAT  APPEND
+                Concatenates every argument: (|| $Name "-" $Version)
+
             Built-in logic commands:
               NOT AND OR XOR ?? ?:
+
+            Calling .NET:
+              System.String.Format "x={0}" 42     # static method
+              System.DateTime.Now                 # static property
+              System.DateTime.AddDays $When 15    # instance method - $When is the target
+              System.DateTime.Year $When          # instance property - $When is the target
+              CALL $When ToString "yyyyMMdd"      # instance call on a handle
 
             External programs:
               A command that is not built-in is run as an external program. Its output is

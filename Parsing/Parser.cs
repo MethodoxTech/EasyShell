@@ -192,10 +192,32 @@ namespace EasyShell.Parsing
             return list;
         }
 
-        private static string StripComment(string line)
+        /// <summary>
+        /// Drops a trailing '#' comment. A '#' inside a double-quoted string is kept, so
+        /// `print "Issue #42"` survives - naive truncation turned that into an unterminated string.
+        /// </summary>
+        public static string StripComment(string line)
         {
-            int idx = line.IndexOf('#');
-            return idx >= 0 ? line[..idx] : line;
+            bool inQuote = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                // Same minimal escapes the tokenizer honors
+                if (inQuote && c == '\\' && i + 1 < line.Length && (line[i + 1] == '"' || line[i + 1] == '\\'))
+                {
+                    i++;
+                    continue;
+                }
+
+                if (c == '"')
+                    inQuote = !inQuote;
+                else if (c == '#' && !inQuote)
+                    return line[..i];
+            }
+
+            return line;
         }
 
         private EasyShellException Err(int line, string msg)

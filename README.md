@@ -35,9 +35,12 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * `IF ... ELSEIF ... ELSE ... END`
   * `WHILE ... END`
   * `FUNC name ... END` and `CALL name`
+* **Arithmetic** with `+`, `-`, `*`, `/`, `%`, `^` - head first, any number of operands
+* **String concatenation** with `||` (or `CONCAT`/`APPEND`), any number of arguments
 * **Reflection-based .NET invocation**
   * Static: `System.IO.File.WriteAllText "path" "content"`
-  * Instance: `CALL $handle MethodName [args...]`
+  * Instance: `System.DateTime.AddDays $Now 15` (first argument is the target)
+  * Instance on a handle: `CALL $handle MethodName [args...]`
 * **External process execution** for non-keyword, non-qualified commands
 * **Comments** with `#`
 
@@ -47,7 +50,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 
 ```easy
 # Get time as handle
-HANDLEVAR NOW System.DateTime.Now
+HANDLEVAR NOW (System.DateTime.Now)
 
 # Convert time to string via instance call
 STRINGVAR DATE (CALL $NOW ToString)
@@ -98,7 +101,7 @@ Anything after `#` is ignored.
 
 ```easy
 # This is a comment
-STRING Name "Charles"  # trailing comment
+STRINGVAR Name "Charles"  # trailing comment
 ```
 
 ### Variables
@@ -110,7 +113,7 @@ INTVAR Count 10
 BOOLVAR Enabled TRUE
 DOUBLEVAR Pi 3.14159
 STRINGVAR Title "Hello"
-HANDLEVAR Now System.DateTime.Now
+HANDLEVAR Now (System.DateTime.Now)
 ```
 
 Rules:
@@ -118,7 +121,7 @@ Rules:
 * Variable names are **case-insensitive**
 * Variables are **strongly typed**
 * `HANDLE` stores an object instance (from .NET calls or other results)
-* Empty strings are supported, e.g. `STRING VALUE ""`
+* Empty strings are supported, e.g. `STRINGVAR VALUE ""`
 
 ### Variable Reference and Assignment
 
@@ -157,8 +160,8 @@ A line is generally a command invocation:
 Any argument may be an expression: a parenthesized command that is evaluated first and yields a value.
 
 ```easy
-STRING X "10"
-BOOL IsTen (== $X 10)
+STRINGVAR X "10"
+BOOLVAR IsTen (== $X 10)
 ```
 
 ### Built-in Comparison Commands
@@ -168,39 +171,81 @@ BOOL IsTen (== $X 10)
 Examples:
 
 ```easy
-BOOL A (== 5 5)
-BOOL B (> 10 2)
-BOOL C (<= 3 3)
+BOOLVAR A (== 5 5)
+BOOLVAR B (> 10 2)
+BOOLVAR C (<= 3 3)
 ```
+
+### Built-in Arithmetic Commands
+
+* `+`, `-`, `*`, `/`, `%`, `^`
+
+Every operator is head first and takes as many operands as you like:
+
+```easy
+$Sum = (+ 1 2 3)      # 6
+$Neg = (- 5)          # -5, unary
+$Pow = (^ 2 10)       # 1024
+```
+
+The result stays an `INT` when every operand is an `INT` and the operator cannot produce a
+fraction (`+`, `-`, `*`, `%`); otherwise it is a `DOUBLE`.
+
+### Built-in String Commands
+
+* `||`, `CONCAT`, `APPEND` - the same command under three names
+
+```easy
+$Name = "EasyShell"
+$Version = "0.1.0"
+
+$Archive = (|| $Name "_v" $Version ".zip")     # EasyShell_v0.1.0.zip
+$Archive = (CONCAT $Name "_v" $Version ".zip") # identical
+```
+
+Every argument is converted to its string form first, so numbers, booleans and handles
+can be mixed in freely:
+
+```easy
+print (|| "Built " 3 " packages, ok=" TRUE)    # Built 3 packages, ok=TRUE
+```
+
+`+` doubles as concatenation when an operand is not a number, which keeps the common case short:
+
+```easy
+$Tag = (+ "build-" 42)     # build-42
+$Total = (+ "10" 1)        # 11 - both operands are numeric, so this is still arithmetic
+```
+
+> Prefer `||` whenever you mean concatenation regardless of what the values look like -
+> `+` only falls back once something is genuinely non-numeric.
 
 ### Control Flow
 
 #### IF / ELSEIF / ELSE / END
 
 ```easy
-INT X 10
+INTVAR X 10
 
 IF (>= $X 10)
-  STRING Msg "X is at least 10"
+  STRINGVAR Msg "X is at least 10"
 ELSEIF (== $X 9)
-  STRING Msg "X is 9"
+  STRINGVAR Msg "X is 9"
 ELSE
-  STRING Msg "X is something else"
+  STRINGVAR Msg "X is something else"
 END
 ```
 
 #### WHILE / END
 
 ```easy
-INT I 0
+INTVAR I 0
 
 WHILE (< $I 3)
   System.Console.WriteLine (System.String.Format "I={0}" $I)
-  $I = (+ $I 1)  # if you add a + command later; otherwise assign directly
+  $I = (+ $I 1)
 END
 ```
-
-> Note: If arithmetic commands are not implemented yet, you can update values using .NET calls you provide, or extend the engine with `+`, `-`, etc.
 
 ### Functions
 
@@ -226,23 +271,61 @@ CALL WriteGreeting
 
 ```easy
 System.Console.WriteLine "Hello"
-STRING S (System.String.Format "X={0}" 42)
+STRINGVAR S (System.String.Format "X={0}" 42)
 ```
 
 Static property/field access (no arguments):
 
 ```easy
-HANDLEVAR Now System.DateTime.Now
+HANDLEVAR Now (System.DateTime.Now)
 ```
+
+#### Instance members as command names
+
+A fully-qualified name may also be an *instance* member. The first argument is the instance it
+runs on, so the syntax stays head first:
+
+```easy
+HANDLEVAR Now (System.DateTime.Now)
+
+# Same as $Now.AddDays(15)
+HANDLEVAR Later (System.DateTime.AddDays $Now 15)
+
+# Instance properties work the same way: $Now.Year
+INTVAR ThisYear (System.DateTime.Year $Now)
+
+# The target does not have to be a handle - anything convertible works
+STRINGVAR Shout (System.String.ToUpper "hello")
+```
+
+Resolution order for `Type.Member <args...>`:
+
+1. static field
+2. static property (no arguments)
+3. static method whose overload accepts all the arguments
+4. instance member, using the **first** argument as the target
+
+So a static member always wins when one fits; the instance form is what happens next rather
+than something you have to ask for.
 
 #### Instance calls via HANDLE
 
-Use `CALL <handle> <method> [args...]`:
+`CALL <handle> <method> [args...]` names the method separately, which is handy when the method
+name itself comes from a variable, or when the type name is long:
 
 ```easy
-HANDLEVAR Now System.DateTime.Now
+HANDLEVAR Now (System.DateTime.Now)
 STRINGVAR Stamp (CALL $Now ToString)
 System.Console.WriteLine $Stamp
+```
+
+#### Overload matching
+
+Overloads are matched by argument count and conversion fit. Optional parameters may be omitted,
+and `params` arrays are filled from the remaining arguments:
+
+```easy
+print (System.String.Format "{0}-{1}-{2}-{3}" 1 2 3 4)   # params object[]
 ```
 
 ## Publish
@@ -320,6 +403,12 @@ Then creates a package in:
 
 ## Changelog
 
+* Unreleased:
+  * String concatenation: `||` / `CONCAT` / `APPEND`, and `+` when an operand is not a number
+  * Instance members as command names: `System.DateTime.AddDays $Now 15`
+  * Overload matching honors optional parameters and `params` arrays
+  * Errors from .NET calls report the script line, and report what the callee complained about
+  * `#` inside a quoted string is no longer treated as a comment
 * v0.1.0: Initial setup.
 
 ## License

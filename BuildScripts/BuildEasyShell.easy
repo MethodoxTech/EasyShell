@@ -34,7 +34,7 @@ END
 
 # Pick an architecture
 # Alternative: stringvar Arch (?: (System.Environment.Is64BitProcess) "x64" "x86")
-IF System.Environment.Is64BitProcess
+IF (System.Environment.Is64BitProcess)
     stringvar Arch "x64"
 ELSE
     stringvar Arch "x86"

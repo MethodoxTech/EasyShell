@@ -20,8 +20,12 @@ Current:
 
 Operator/Command:
 
-- [ ] `+` or `Append/Concat` or `||` for string concat (with many potential arguments), notice the syntax is function head first: `|| $a $b $c`
-- [ ] Support instance method as command name: e.g. `System.DateTime.AddDays $myTime 15`
+- [x] `+` or `Append/Concat` or `||` for string concat (with many potential arguments), notice the syntax is function head first: `|| $a $b $c`
+      `||`, `CONCAT` and `APPEND` are the same command and take any number of arguments;
+      `+` falls back to concatenation as soon as an operand is not numeric.
+- [x] Support instance method as command name: e.g. `System.DateTime.AddDays $myTime 15`
+      The first argument is the target. Static members still win when one fits; instance
+      members (methods, properties, fields) are tried next. `CALL` still works as before.
 
 Enhance syntax:
 
@@ -32,6 +36,9 @@ Enhance syntax:
 Manual testing:
 
 - [ ] Test call method of handles
+- [ ] Run `Examples/StringsAndInstanceMembers.easy` - covers `||`/`CONCAT`/`APPEND`, `+` as
+      concatenation, instance methods/properties as command names, and `CALL`. It self-checks
+      with `assert`, so a non-zero exit code means something regressed.
 
 Enhancement:
 
@@ -43,7 +50,9 @@ Enhancement:
 - (Phase 3) FOREACH $Array $Item...END
 - (Phase 2) Common built-ins for "6) File system conveniences"
 - GETENV, SETENV
-- [Logging] During error, print line number so we can know which line is causing issue, e.g. Let's change `BuildEasyShell.easy` last line to `zip $PublishFolder\* $ArchivePath` which will raise an exception.
+- [x] [Logging] During error, print line number so we can know which line is causing issue, e.g. Let's change `BuildEasyShell.easy` last line to `zip $PublishFolder\* $ArchivePath` which will raise an exception.
+      Reflection/alias failures are now tagged with the script line, and the message is the
+      callee's own complaint rather than "Exception has been thrown by the target of an invocation".
 
 Issues:
 

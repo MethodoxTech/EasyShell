@@ -72,7 +72,7 @@ namespace EasyShell
             foreach (Statement s in block.Statements)
                 ExecuteStatement(rt, s);
         }
-        private static void ExecuteStatement(Runtime rt, Statement stmt)
+        public static void ExecuteStatement(Runtime rt, Statement stmt)
         {
             switch (stmt)
             {
@@ -163,10 +163,7 @@ namespace EasyShell
             {
                 // Replace command name with fully-qualified target and invoke as usual
                 // Equivalent to: target <args...>
-                return ReflectionInvoker.InvokeFullyQualified(
-                    target,
-                    args.Skip(1).Select(a => EvaluateArg(rt, a)).ToList()
-                );
+                return InvokeQualified(target, EvalArgs(rt, args.Skip(1)), line);
             }
 
             // Built-in: variable declarations
@@ -194,14 +191,16 @@ namespace EasyShell
 
                 if (args.Count >= 3)
                 {
-                    object handle = EvaluateArg(rt, args[1]).AsHandle()
-                                 ?? throw new EasyShellException($"{line}: CALL handle is null.");
+                    // A handle is the usual target, but any non-null value can take an instance
+                    // call - CALL $someString ToUpper is perfectly reasonable.
+                    Value receiver = EvaluateArg(rt, args[1]);
+                    object handle = receiver.AsHandle() ?? receiver.Data
+                                 ?? throw new EasyShellException($"{line}: CALL target is null.");
 
                     string method = EvaluateArg(rt, args[2]).AsString();
                     List<Value> callArgs = EvalArgs(rt, args.Skip(3));
 
-                    Value result = ReflectionInvoker.InvokeInstance(handle, method, callArgs);
-                    return result;
+                    return InvokeOnHandle(handle, method, callArgs, line);
                 }
 
                 throw new EasyShellException($"{line}: CALL syntax: CALL <funcName> OR CALL <handle> <method> [args]");
@@ -219,13 +218,28 @@ namespace EasyShell
                 return new Value(ValueKind.Bool, ok);
             }
 
+            // Built-in string concatenation: || <a> <b> [...]  (also CONCAT / APPEND)
+            if (IsConcat(cmdName))
+            {
+                if (args.Count < 2)
+                    throw new EasyShellException($"{line}: {cmdName} expects at least 1 argument.");
+
+                return Concat(EvalArgs(rt, args.Skip(1)));
+            }
+
             // Built-in arithmetic shorthands: + - * / % ^
             if (OperatorCmds.Contains(cmdName))
             {
                 if (args.Count < 3 && cmdName != "-")
                     throw new EasyShellException($"{line}: {cmdName} expects at least 2 arguments.");
 
-                List<Value> vs = args.Skip(1).Select(a => EvaluateArg(rt, a)).ToList();
+                List<Value> vs = EvalArgs(rt, args.Skip(1));
+
+                // '+' doubles as string concatenation the moment an operand is not a number, so
+                // (+ "Build-" $Tag) reads the way people expect. Adding non-numbers used to
+                // silently produce 0. Use || when concatenation is what you always mean.
+                if (cmdName == "+" && !vs.All(IsNumeric))
+                    return Concat(vs);
 
                 // unary minus: (- 5)
                 if (cmdName == "-" && vs.Count == 1)
@@ -362,12 +376,10 @@ namespace EasyShell
                 throw new ScriptExitException(code);
             }
 
-            // C# fully qualified member invocation or access
+            // C# fully qualified member invocation or access - static, or instance with the first
+            // argument as the target: System.DateTime.AddDays $when 15
             if (!File.Exists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal))
-            {
-                List<Value> callArgs = EvalArgs(rt, args.Skip(1));
-                return ReflectionInvoker.InvokeFullyQualified(cmdName, callArgs);
-            }
+                return InvokeQualified(cmdName, EvalArgs(rt, args.Skip(1)), line);
 
             // External executable
             {
@@ -403,6 +415,41 @@ namespace EasyShell
         #endregion
 
         #region Routines
+        /// <summary>
+        /// Invokes a fully-qualified .NET member, tagging failures with the script line - reflection
+        /// itself has no idea which line asked for it.
+        /// </summary>
+        private static Value InvokeQualified(string fullyQualified, List<Value> args, int line)
+        {
+            try
+            {
+                return ReflectionInvoker.InvokeFullyQualified(fullyQualified, args);
+            }
+            catch (Exception e) when (IsReportableCallFailure(e))
+            {
+                throw new EasyShellException($"{line}: {e.Message}");
+            }
+        }
+        /// <summary>
+        /// Same, for `CALL &lt;handle&gt; &lt;method&gt; [args]`.
+        /// </summary>
+        private static Value InvokeOnHandle(object handle, string method, List<Value> args, int line)
+        {
+            try
+            {
+                return ReflectionInvoker.InvokeInstance(handle, method, args);
+            }
+            catch (Exception e) when (IsReportableCallFailure(e))
+            {
+                throw new EasyShellException($"{line}: {e.Message}");
+            }
+        }
+        /// <summary>
+        /// A failed .NET call should read as a script error with a line number, not as an unhandled
+        /// crash - except for the exceptions that ARE the script's control flow.
+        /// </summary>
+        private static bool IsReportableCallFailure(Exception e)
+            => e is not (ScriptExitException or ScriptReturnException);
         private static void InvokeFunction(Runtime rt, string funcName, int line)
         {
             if (!rt.Functions.TryGetValue(funcName, out Block? body))
@@ -420,7 +467,7 @@ namespace EasyShell
         #endregion
 
         #region Helpers
-        private static void SetLastExitCode(Runtime rt, int code)
+        public static void SetLastExitCode(Runtime rt, int code)
         {
             Value v = new(ValueKind.Int, code);
             if (rt.TryGetVar(LastExitCodeVariable, out _))
@@ -454,6 +501,20 @@ namespace EasyShell
             s.Equals("HANDLEVAR", StringComparison.OrdinalIgnoreCase);
         private static bool IsComparison(string s) =>
             s is "==" or "!=" or ">" or "<" or ">=" or "<=";
+        private static bool IsConcat(string s) =>
+            s == "||" ||
+            s.Equals("CONCAT", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("APPEND", StringComparison.OrdinalIgnoreCase);
+        private static Value Concat(List<Value> values)
+            => new(ValueKind.String, string.Concat(values.Select(v => v.AsString())));
+        /// <summary>
+        /// Whether a value can take part in arithmetic. Strings count when they parse as a number,
+        /// which is how "10" has always behaved in (+ "10" 1).
+        /// </summary>
+        private static bool IsNumeric(Value v) =>
+            v.Kind is ValueKind.Int or ValueKind.Double or ValueKind.Bool ||
+            (v.Kind == ValueKind.String &&
+             double.TryParse(v.AsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out _));
         private static bool Compare(string op, Value a, Value b)
         {
             // Prefer numeric if both look numeric-ish

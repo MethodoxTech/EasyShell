@@ -1,4 +1,5 @@
 ﻿using EasyShell.Exceptions;
+using EasyShell.Parsing;
 using EasyShell.Types;
 using System;
 using System.Text;
@@ -53,9 +54,10 @@ namespace EasyShell
                     {
                         Console.Error.WriteLine($"(Error) {ex.Message}");
                     }
-                    catch (ScriptExitException)
+                    catch (ScriptExitException ex)
                     {
-                        return 0;
+                        // `exit 3` at the prompt should still be worth 3 to whoever launched us.
+                        return ex.ExitCode;
                     }
                     catch (Exception ex)
                     {
@@ -95,9 +97,9 @@ namespace EasyShell
 
         private static void UpdateBlockDepth(string trimmed, ref int openBlocks)
         {
-            // Strip comments quickly
-            int hash = trimmed.IndexOf('#');
-            if (hash >= 0) trimmed = trimmed[..hash].Trim();
+            // Strip comments the same way the parser does, so a '#' inside a string is not
+            // mistaken for a comment.
+            trimmed = Parser.StripComment(trimmed).Trim();
             if (trimmed.Length == 0) return;
 
             // Very simple: if a line starts with IF/WHILE/FUNC, increment. If starts with END, decrement.

@@ -15,6 +15,8 @@ Current:
 - [ ] Test with more real-world use cases
 - [ ] Draft build script
 - [ ] Publish to Itch.io
+- [ ] Create Visual Shell script for publishing whole Steam Divooka explore distribution
+- [ ] Reference/Refactor `EasyShell` directly for Visual Shell use
 
 Operator/Command:
 

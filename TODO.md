@@ -33,7 +33,9 @@ Manual testing:
 
 Enhancement:
 
-- (Phase 2) Add error code or at least know when a program exited with error
+- [x] (Phase 2) Add error code or at least know when a program exited with error - external
+      programs now set `$LAST_EXIT_CODE` and abort the script on non-zero unless
+      `$EasyContinueOnError` is TRUE; `$EasyProcessTimeoutSeconds` bounds a single program.
 - (Phase 2) Try.. Exception.. End.
 - (Phase 2) Support PIPE, WRITE/READ/APPEND for piping and redirection
 - (Phase 3) FOREACH $Array $Item...END

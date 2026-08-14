@@ -1,0 +1,40 @@
+# Concatenation and instance members as command names.
+# Run with: easy ./Examples/StringsAndInstanceMembers.easy
+
+$Name = "EasyShell"
+$Version = "0.1.0"
+
+# --- Concatenation -----------------------------------------------------------
+
+# || takes as many arguments as you like. CONCAT and APPEND are the same command.
+$Archive = (|| $Name "_v" $Version ".zip")
+print $Archive
+assert (== $Archive "EasyShell_v0.1.0.zip") "|| should join every argument"
+
+# Anything converts to its string form, so numbers and booleans mix in freely.
+print (CONCAT "Built " 3 " packages, ok=" TRUE)
+
+# '+' concatenates the moment an operand is not a number...
+print (+ "build-" 42)
+
+# ...and stays arithmetic while every operand is numeric.
+assert (== (+ 1 2 3) 6) "+ should still add numbers"
+assert (== (+ "10" 1) 11) "numeric strings still add up"
+
+# --- Instance members as command names ---------------------------------------
+
+# The first argument is the instance the member runs on.
+HANDLEVAR Now (System.DateTime.Now)
+HANDLEVAR Later (System.DateTime.AddDays $Now 15)
+
+print (System.DateTime.ToString $Now "yyyy-MM-dd")
+print (System.DateTime.ToString $Later "yyyy-MM-dd")
+
+# Instance properties work the same way.
+print (|| "Year: " (System.DateTime.Year $Now))
+
+# The target does not have to be a handle - anything convertible works.
+assert (== (System.String.ToUpper "hello") "HELLO") "instance call on a plain string"
+
+# CALL is still there when the method name is dynamic or the type name is long.
+print (CALL $Now ToString "HH:mm")

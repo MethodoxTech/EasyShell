@@ -1,7 +1,8 @@
-﻿using EasyShell.Exceptions;
+using EasyShell.Exceptions;
 using EasyShell.Types;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -10,9 +11,27 @@ namespace EasyShell.Reflection
 {
     public static class ReflectionInvoker
     {
-        // Example: System.DateTime.Now  (property)
-        // Example: System.String.Format "x={0}" 5  (static method)
-        // Example: System.IO.File.WriteAllText "c:/x" "hi" (static method)
+        #region Configurations
+        private const BindingFlags StaticLookup = BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase;
+        private const BindingFlags InstanceLookup = BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase;
+        /// <summary>
+        /// Score added for every parameter the caller left to its default value, so that an
+        /// overload taking exactly the supplied arguments always wins over one padded with defaults.
+        /// </summary>
+        private const int OmittedArgumentPenalty = 40;
+        /// <summary>
+        /// Score added when arguments have to be packed into a `params` array. Keeps
+        /// `Format(string, object)` ahead of `Format(string, params object[])` for two arguments.
+        /// </summary>
+        private const int ParamArrayPenalty = 60;
+        #endregion
+
+        #region Methods
+        // Example: System.DateTime.Now                       (static property)
+        // Example: System.String.Format "x={0}" 5             (static method)
+        // Example: System.IO.File.WriteAllText "c:/x" "hi"    (static method)
+        // Example: System.DateTime.AddDays $when 15           (instance method, $when is the target)
+        // Example: System.DateTime.Year $when                 (instance property, $when is the target)
         public static Value InvokeFullyQualified(string fullyQualified, List<Value> args)
         {
             // Split into type + member by last dot.
@@ -26,107 +45,270 @@ namespace EasyShell.Reflection
             Type type = ResolveType(typeName)
                        ?? throw new EasyShellException($"Type not found: {typeName}");
 
-            // Field?
-            FieldInfo? field = type.GetField(memberName, BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
+            // Static field?
+            FieldInfo? field = FindField(type, memberName, StaticLookup);
             if (field is not null)
-            {
-                object? obj = field.GetValue(null);
-                return WrapResult(obj);
-            }
+                return WrapResult(field.GetValue(null));
 
-            // Property?
-            PropertyInfo? prop = type.GetProperty(memberName, BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
+            // Static property?
+            PropertyInfo? prop = FindProperty(type, memberName, StaticLookup);
             if (prop is not null && args.Count == 0)
-            {
-                object? obj = prop.GetValue(null);
-                return WrapResult(obj);
-            }
+                return WrapResult(prop.GetValue(null));
 
-            // Method
-            List<MethodInfo> methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Where(m => m.Name.Equals(memberName, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            // Static method?
+            List<MethodInfo> statics = FindMethods(type, memberName, isStatic: true);
+            if (statics.Count > 0 && TryBindBestMethod(statics, args, out MethodInfo? staticMethod, out object?[]? staticArgs))
+                return InvokeChecked(staticMethod, null /*static - no target*/, staticArgs, fullyQualified);
 
-            if (methods.Count == 0)
-                throw new EasyShellException($"Static member not found: {fullyQualified}");
+            // Instance member, with the FIRST argument as the target:
+            //   System.DateTime.AddDays $when 15   is   $when.AddDays(15)
+            // This keeps the language's "function head first" shape for instance calls too, so a
+            // handle no longer has to go through CALL just to reach an ordinary method.
+            if (args.Count > 0 && TryInvokeInstanceMember(type, memberName, args, fullyQualified, out Value result))
+                return result;
 
-            (MethodInfo? best, object?[]? converted) = BindBestMethod(methods, args);
-            try
-            {
-                object? res = best.Invoke(null, converted);
-                return WrapResult(res);
-            }
-            catch (Exception e)
-            {
-                throw new EasyShellException(e.InnerException?.Message ?? e.Message);
-            }
+            throw new EasyShellException(
+                statics.Count > 0 || args.Count > 0
+                    ? $"No matching overload for {fullyQualified} ({DescribeArgs(args)})."
+                    : $"Member not found: {fullyQualified}");
         }
 
         public static Value InvokeInstance(object target, string methodOrMember, List<Value> args)
         {
             Type type = target.GetType();
+            string display = $"{type.FullName}.{methodOrMember}";
+
+            if (TryInvokeOnTarget(type, target, methodOrMember, args, display, out Value result))
+                return result;
+
+            throw new EasyShellException($"Instance member not found: {display} ({DescribeArgs(args)}).");
+        }
+        #endregion
+
+        #region Routines
+        /// <summary>
+        /// Invokes <paramref name="memberName"/> on the instance supplied as the first argument,
+        /// e.g. `System.DateTime.AddDays $when 15`. Returns false (without throwing) when the first
+        /// argument cannot serve as the target or no member matches, so the caller can report a
+        /// single, complete error covering both the static and the instance attempt.
+        /// </summary>
+        private static bool TryInvokeInstanceMember(Type type, string memberName, List<Value> args, string display, out Value result)
+        {
+            result = Value.Null;
+
+            if (!TryConvert(args[0], type, out object? target, out _) || target is null)
+                return false;
+
+            List<Value> callArgs = args.GetRange(1, args.Count - 1);
+            return TryInvokeOnTarget(type, target, memberName, callArgs, display, out result);
+        }
+
+        private static bool TryInvokeOnTarget(Type type, object target, string memberName, List<Value> args, string display, out Value result)
+        {
+            result = Value.Null;
 
             // Property/field access if no args
             if (args.Count == 0)
             {
-                FieldInfo? field = type.GetField(methodOrMember, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                FieldInfo? field = FindField(type, memberName, InstanceLookup);
                 if (field is not null)
-                    return WrapResult(field.GetValue(target));
+                {
+                    result = WrapResult(field.GetValue(target));
+                    return true;
+                }
 
-                PropertyInfo? prop = type.GetProperty(methodOrMember, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                PropertyInfo? prop = FindProperty(type, memberName, InstanceLookup);
                 if (prop is not null)
-                    return WrapResult(prop.GetValue(target));
+                {
+                    result = WrapResult(prop.GetValue(target));
+                    return true;
+                }
             }
 
-            List<MethodInfo> methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Where(m => m.Name.Equals(methodOrMember, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            List<MethodInfo> methods = FindMethods(type, memberName, isStatic: false);
+            if (methods.Count == 0 || !TryBindBestMethod(methods, args, out MethodInfo? method, out object?[]? converted))
+                return false;
 
-            if (methods.Count == 0)
-                throw new EasyShellException($"Instance member not found: {type.FullName}.{methodOrMember}");
-
-            (MethodInfo? best, object?[]? converted) = BindBestMethod(methods, args);
-            object? res = best.Invoke(target, converted);
-            return WrapResult(res);
+            result = InvokeChecked(method, target, converted, display);
+            return true;
         }
 
-        private static (MethodInfo method, object?[] convertedArgs) BindBestMethod(List<MethodInfo> candidates, List<Value> args)
+        private static Value InvokeChecked(MethodInfo method, object? target, object?[] args, string display)
         {
-            // Simple binder: exact parameter count, then conversions score.
-            List<(int score, MethodInfo m, object?[] converted)> scored = [];
+            try
+            {
+                return WrapResult(method.Invoke(target, args));
+            }
+            catch (TargetInvocationException e)
+            {
+                // Surface what the called code complained about, not "Exception has been thrown by
+                // the target of an invocation."
+                throw new EasyShellException($"{display}: {e.InnerException?.Message ?? e.Message}");
+            }
+            catch (Exception e)
+            {
+                throw new EasyShellException($"Cannot invoke {display}: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Case-insensitive field lookup that survives shadowed (`new`) members instead of throwing
+        /// AmbiguousMatchException out of the interpreter.
+        /// </summary>
+        private static FieldInfo? FindField(Type type, string name, BindingFlags flags)
+        {
+            try
+            {
+                return type.GetField(name, flags);
+            }
+            catch (AmbiguousMatchException)
+            {
+                // GetFields lists the most derived declarations first.
+                return type.GetFields(flags).FirstOrDefault(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        /// <summary>
+        /// Case-insensitive property lookup. Indexers and write-only properties are skipped - there
+        /// is no way to read them here, and asking would throw from deep inside reflection.
+        /// </summary>
+        private static PropertyInfo? FindProperty(Type type, string name, BindingFlags flags)
+        {
+            PropertyInfo? prop;
+            try
+            {
+                prop = type.GetProperty(name, flags);
+            }
+            catch (AmbiguousMatchException)
+            {
+                prop = type.GetProperties(flags).FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return prop is not null && prop.CanRead && prop.GetIndexParameters().Length == 0
+                ? prop
+                : null;
+        }
+
+        private static List<MethodInfo> FindMethods(Type type, string name, bool isStatic)
+            => [.. type
+                .GetMethods(BindingFlags.Public | (isStatic ? BindingFlags.Static : BindingFlags.Instance))
+                .Where(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase))];
+
+        private static bool TryBindBestMethod(
+            List<MethodInfo> candidates,
+            List<Value> args,
+            [NotNullWhen(true)] out MethodInfo? method,
+            [NotNullWhen(true)] out object?[]? convertedArgs)
+        {
+            // Simple binder: match parameters positionally, then pick the cheapest conversion score.
+            List<(int Score, MethodInfo Method, object?[] Converted)> scored = [];
 
             foreach (MethodInfo m in candidates)
             {
-                ParameterInfo[] ps = m.GetParameters();
-                if (ps.Length != args.Count) 
-                    continue;
-
-                object?[] converted = new object?[ps.Length];
-                int score = 0;
-                bool ok = true;
-
-                for (int i = 0; i < ps.Length; i++)
-                {
-                    Type pType = ps[i].ParameterType;
-                    if (!TryConvert(args[i], pType, out object? obj, out int s))
-                    {
-                        ok = false; 
-                        break;
-                    }
-                    converted[i] = obj;
-                    score += s;
-                }
-
-                if (ok) 
+                if (TryBind(m, args, out object?[]? converted, out int score))
                     scored.Add((score, m, converted));
             }
 
             if (scored.Count == 0)
-                throw new EasyShellException($"No matching overload for ({string.Join(", ", args.Select(a => a.Kind))}).");
+            {
+                method = null;
+                convertedArgs = null;
+                return false;
+            }
 
             // Lower score is better
-            (int score, MethodInfo m, object?[] converted) best = scored.OrderBy(x => x.score).First();
-            return (best.m, best.converted);
+            (int Score, MethodInfo Method, object?[] Converted) best = scored.OrderBy(x => x.Score).First();
+            method = best.Method;
+            convertedArgs = best.Converted;
+            return true;
+        }
+
+        private static bool TryBind(MethodInfo method, List<Value> args, [NotNullWhen(true)] out object?[]? converted, out int score)
+        {
+            ParameterInfo[] ps = method.GetParameters();
+
+            // Straight positional match, optionally filling trailing optional parameters.
+            if (args.Count <= ps.Length && TryBindFixed(ps, args, out converted, out score))
+                return true;
+
+            // params tail, e.g. String.Format(string, params object[]).
+            // Deliberately array-only: `params ReadOnlySpan<T>` collections cannot be handed to
+            // MethodInfo.Invoke at all, so they must not look bindable here.
+            bool hasParamArray = ps.Length > 0
+                              && ps[^1].ParameterType.IsArray
+                              && ps[^1].IsDefined(typeof(ParamArrayAttribute), inherit: false);
+            if (hasParamArray && TryBindParamArray(ps, args, out converted, out score))
+                return true;
+
+            converted = null;
+            score = 0;
+            return false;
+        }
+
+        private static bool TryBindFixed(ParameterInfo[] ps, List<Value> args, [NotNullWhen(true)] out object?[]? converted, out int score)
+        {
+            converted = null;
+            score = 0;
+
+            object?[] result = new object?[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+            {
+                if (i < args.Count)
+                {
+                    if (!TryConvert(args[i], ps[i].ParameterType, out object? obj, out int s))
+                        return false;
+
+                    result[i] = obj;
+                    score += s;
+                    continue;
+                }
+
+                // Argument not supplied: only acceptable when the parameter has a default.
+                if (!ps[i].HasDefaultValue)
+                    return false;
+
+                result[i] = ps[i].DefaultValue;
+                score += OmittedArgumentPenalty;
+            }
+
+            converted = result;
+            return true;
+        }
+
+        private static bool TryBindParamArray(ParameterInfo[] ps, List<Value> args, [NotNullWhen(true)] out object?[]? converted, out int score)
+        {
+            converted = null;
+            score = ParamArrayPenalty;
+
+            int fixedCount = ps.Length - 1;
+            if (args.Count < fixedCount)
+                return false;
+
+            object?[] result = new object?[ps.Length];
+            for (int i = 0; i < fixedCount; i++)
+            {
+                if (!TryConvert(args[i], ps[i].ParameterType, out object? obj, out int s))
+                    return false;
+
+                result[i] = obj;
+                score += s;
+            }
+
+            Type elementType = ps[^1].ParameterType.GetElementType()
+                               ?? typeof(object); // Unreachable for arrays; keeps the compiler happy
+            Array rest = Array.CreateInstance(elementType, args.Count - fixedCount);
+            for (int i = fixedCount; i < args.Count; i++)
+            {
+                if (!TryConvert(args[i], elementType, out object? obj, out int s))
+                    return false;
+
+                rest.SetValue(obj, i - fixedCount);
+                score += s;
+            }
+
+            result[^1] = rest;
+            converted = result;
+            return true;
         }
 
         private static bool TryConvert(Value v, Type targetType, out object? obj, out int score)
@@ -140,6 +322,11 @@ namespace EasyShell.Reflection
                 score = 50;
                 return !targetType.IsValueType || Nullable.GetUnderlyingType(targetType) is not null;
             }
+
+            // Nullable<T> takes whatever T takes (Convert.ChangeType cannot target Nullable<T>).
+            Type? underlying = Nullable.GetUnderlyingType(targetType);
+            if (underlying is not null)
+                return TryConvert(v, underlying, out obj, out score);
 
             // direct assignable for HANDLE
             if (v.Kind == ValueKind.Handle && v.Data is not null)
@@ -226,10 +413,18 @@ namespace EasyShell.Reflection
                 int i => new Value(ValueKind.Int, i),
                 double d => new Value(ValueKind.Double, d),
                 float f => new Value(ValueKind.Double, (double)f),
+                // Counts and file sizes come back as long; keep them exact while they still fit.
+                long l when l >= int.MinValue && l <= int.MaxValue => new Value(ValueKind.Int, (int)l),
                 long l => new Value(ValueKind.Double, (double)l),
+                decimal m => new Value(ValueKind.Double, (double)m),
                 _ => new Value(ValueKind.Handle, res)
             };
         }
+
+        private static string DescribeArgs(List<Value> args)
+            => args.Count == 0
+                ? "no arguments"
+                : string.Join(", ", args.Select(a => a.Kind.ToString()));
 
         private static Type? ResolveType(string typeName)
         {
@@ -241,5 +436,6 @@ namespace EasyShell.Reflection
             }
             return null;
         }
+        #endregion
     }
 }

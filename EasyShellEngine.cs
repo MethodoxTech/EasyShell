@@ -25,14 +25,15 @@ namespace EasyShell
                 Executor.ExecuteBlock(_rt, block);
                 return 0;
             }
+            catch (ScriptReturnException)
+            {
+                // RETURN outside a function ends the script, as documented - not a crash.
+                return 0;
+            }
             catch (ScriptExitException ex)
             {
                 // Record it
-                if (_rt.TryGetVar("LAST_EXIT_CODE", out _))
-                    _rt.Assign("LAST_EXIT_CODE", new Value(ValueKind.Int, ex.ExitCode));
-                else
-                    _rt.Declare("INT", "LAST_EXIT_CODE", new Value(ValueKind.Int, ex.ExitCode));
-
+                Executor.SetLastExitCode(_rt, ex.ExitCode);
                 return ex.ExitCode;
             }
         }
@@ -46,21 +47,21 @@ namespace EasyShell
             Block block = parser.Parse(unitText);
 
             Value last = Value.Null;
-            foreach (Statement stmt in block.Statements)
+            try
             {
-                if (stmt is CommandStatement c)
-                    last = Executor.ExecuteCommand(_rt, c.Args, c.Line);
-                else
-                    ExecutorExecuteStmtViaPublicWrapper(stmt); // see below
+                foreach (Statement stmt in block.Statements)
+                {
+                    if (stmt is CommandStatement c)
+                        last = Executor.ExecuteCommand(_rt, c.Args, c.Line);
+                    else
+                        Executor.ExecuteStatement(_rt, stmt);
+                }
+            }
+            catch (ScriptReturnException)
+            {
+                // RETURN typed at the prompt just ends this unit; the session stays alive.
             }
             return last;
-
-            void ExecutorExecuteStmtViaPublicWrapper(Statement s)
-            {
-                // Alternatively: make Executor.ExecuteStmt internal/public.
-                // (Minimal) Execute as a one-statement block.
-                Executor.ExecuteBlock(_rt, new Block(new List<Statement> { s }));
-            }
         }
         public IEnumerable<(string Name, string Kind, string Value)> DumpVariables()
             => _rt.DumpVariables();

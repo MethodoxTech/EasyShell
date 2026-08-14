@@ -403,13 +403,13 @@ Then creates a package in:
 
 ## Changelog
 
-* Unreleased:
+* v0.1.0: Initial setup.
+* v0.1.1 (Unreleased):
   * String concatenation: `||` / `CONCAT` / `APPEND`, and `+` when an operand is not a number
   * Instance members as command names: `System.DateTime.AddDays $Now 15`
   * Overload matching honors optional parameters and `params` arrays
   * Errors from .NET calls report the script line, and report what the callee complained about
   * `#` inside a quoted string is no longer treated as a comment
-* v0.1.0: Initial setup.
 
 ## License
 

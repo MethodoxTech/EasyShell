@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <AssemblyName>easy</AssemblyName>
     <AssemblyTitle>Easy Shell</AssemblyTitle>
     <ApplicationIcon>EasyShell.ico</ApplicationIcon>

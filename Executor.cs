@@ -12,6 +12,21 @@ namespace EasyShell
 {
     public static class Executor
     {
+        #region Configurations
+        /// <summary>
+        /// Script-settable variable. When TRUE, a non-zero exit code from an external program is
+        /// recorded in $LAST_EXIT_CODE but does not abort the script.
+        /// </summary>
+        public const string ContinueOnErrorVariable = "EasyContinueOnError";
+        /// <summary>
+        /// Script-settable variable. Wall-clock limit in seconds for a single external program;
+        /// 0 or unset means no limit. On expiry the whole process tree is killed.
+        /// </summary>
+        public const string ProcessTimeoutVariable = "EasyProcessTimeoutSeconds";
+        /// <summary>Set after every external program invocation.</summary>
+        public const string LastExitCodeVariable = "LAST_EXIT_CODE";
+        #endregion
+
         #region Command Mapping
         private static readonly HashSet<string> OperatorCmds =
             new(StringComparer.OrdinalIgnoreCase) { "+", "-", "*", "/", "%", "^" };
@@ -22,7 +37,8 @@ namespace EasyShell
                 ["cd"] = "System.IO.Directory.SetCurrentDirectory",
                 ["cwd"] = "System.IO.Directory.GetCurrentDirectory",
                 // Path
-                ["joinpath"] = "System.IO.Path.Join",
+                // Remark: Deliberately NOT System.IO.Path.Join - see CommonUtilities.JoinPath for why.
+                ["joinpath"] = "EasyShell.Commands.CommonUtilities.JoinPath",
                 ["resolve"] = "System.IO.Path.GetFullPath",
                 ["exists"] = "EasyShell.Commands.CommonUtilities.Exists",
                 // Env
@@ -98,7 +114,9 @@ namespace EasyShell
                     }
 
                 case CommandStatement cmd:
-                    Value output = ExecuteCommand(rt, cmd.Args, cmd.Line);
+                    // Statement context: an external program streams its output live, so there is
+                    // nothing left to echo afterwards (doing both printed everything twice).
+                    Value output = ExecuteCommand(rt, cmd.Args, cmd.Line, streamProcessOutput: true);
                     if (output.Kind == ValueKind.String && !string.IsNullOrEmpty(output.Data as string))
                         Console.WriteLine(output.Data);
                     return;
@@ -128,7 +146,7 @@ namespace EasyShell
         private static List<Value> EvalArgs(Runtime rt, IEnumerable<Arg> args)
             => args.Select(a => EvaluateArg(rt, a)).ToList();
 
-        public static Value ExecuteCommand(Runtime rt, List<Arg> args, int line)
+        public static Value ExecuteCommand(Runtime rt, List<Arg> args, int line, bool streamProcessOutput = false)
         {
             if (args.Count == 0)
                 return Value.Null;
@@ -353,16 +371,33 @@ namespace EasyShell
 
             // External executable
             {
+                List<string> callArgs = [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())];
+
+                ProcessInvoker.ProcessResult result;
                 try
                 {
-                    List<string> callArgs = [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())];
-                    string output = ProcessInvoker.RunStreaming(cmdName, callArgs, Console.WriteLine);
-                    return new Value(ValueKind.String, output);
+                    // In statement context stream live so long builds show progress; in expression
+                    // context stay quiet, because the caller wants the text as a value.
+                    Action<string>? sink = streamProcessOutput ? Console.WriteLine : null;
+                    result = ProcessInvoker.RunStreaming(cmdName, callArgs, sink, GetProcessTimeout(rt));
                 }
                 catch (Exception e)
                 {
-                    throw new EasyShellException($"Failed to execute: {e.Message}");
+                    throw new EasyShellException($"{line}: Failed to execute '{cmdName}': {e.Message}");
                 }
+
+                // Record the exit code so scripts can inspect it even when continuing on error.
+                SetLastExitCode(rt, result.ExitCode);
+
+                if (result.ExitCode != 0 && !IsContinueOnError(rt))
+                    throw new EasyShellException(
+                        $"{line}: '{cmdName}' exited with code {result.ExitCode}. " +
+                        $"Set ${ContinueOnErrorVariable} to TRUE to ignore non-zero exit codes.");
+
+                // Nothing to hand back in statement context - it has already been printed.
+                return streamProcessOutput
+                    ? Value.Null
+                    : new Value(ValueKind.String, result.BestText);
             }
         }
         #endregion
@@ -385,6 +420,24 @@ namespace EasyShell
         #endregion
 
         #region Helpers
+        private static void SetLastExitCode(Runtime rt, int code)
+        {
+            Value v = new(ValueKind.Int, code);
+            if (rt.TryGetVar(LastExitCodeVariable, out _))
+                rt.Assign(LastExitCodeVariable, v);
+            else
+                rt.Declare("INT", LastExitCodeVariable, v);
+        }
+        private static bool IsContinueOnError(Runtime rt)
+            => rt.TryGetVar(ContinueOnErrorVariable, out Variable? v) && v.Value.AsBool();
+        private static TimeSpan? GetProcessTimeout(Runtime rt)
+        {
+            if (!rt.TryGetVar(ProcessTimeoutVariable, out Variable? v))
+                return null;
+
+            double seconds = v.Value.AsDouble();
+            return seconds > 0 ? TimeSpan.FromSeconds(seconds) : null;
+        }
         private static bool IsPresent(Value v)
         {
             if (v.Kind == ValueKind.Null) return false;

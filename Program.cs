@@ -89,8 +89,21 @@ namespace EasyShell
             Built-in logic commands:
               NOT AND OR XOR ?? ?:
 
+            External programs:
+              A command that is not built-in is run as an external program. Its output is
+              streamed live when used as a statement, or captured as a string when used as
+              an expression: $text = (git rev-parse HEAD)
+
+              A non-zero exit code aborts the script by default.
+
             Global variables:
               $EasyScriptRoot $IsWindows $IsLinux $IsMacOS
+
+              $LAST_EXIT_CODE             Exit code of the last external program.
+              $EasyContinueOnError        Set TRUE to let non-zero exit codes through
+                                          instead of aborting. Default FALSE.
+              $EasyProcessTimeoutSeconds  Wall-clock limit per external program; the
+                                          process tree is killed on expiry. 0/unset = no limit.
             """;
         #endregion
 

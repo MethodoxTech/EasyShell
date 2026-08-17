@@ -68,8 +68,7 @@ namespace EasyShell.Parsing
                 if (tokens[0].Kind == TokKind.VarRef && tokens.Count >= 3 && tokens[1].Text == "=")
                 {
                     string varName = tokens[0].Text[1..];
-                    Arg valueArg = ParseArgTokens(lineNo, tokens.Skip(2).ToList()).SingleOrDefault()
-                                   ?? throw Err(lineNo, "Assignment missing value.");
+                    Arg valueArg = ParseSingleArg(lineNo, tokens.Skip(2).ToList(), "Assignment");
                     stmts.Add(new AssignStatement(lineNo, varName, valueArg));
                     continue;
                 }
@@ -78,8 +77,7 @@ namespace EasyShell.Parsing
                 if (head.Equals("IF", StringComparison.OrdinalIgnoreCase))
                 {
                     if (tokens.Count < 2) throw Err(lineNo, "IF missing condition.");
-                    Arg condArg = ParseArgTokens(lineNo, tokens.Skip(1).ToList()).SingleOrDefault()
-                                  ?? throw Err(lineNo, "IF missing condition.");
+                    Arg condArg = ParseSingleArg(lineNo, tokens.Skip(1).ToList(), "IF condition");
 
                     List<(Arg, Block)> branches = [];
                     Block? elseBody = (Block?)null;
@@ -103,8 +101,7 @@ namespace EasyShell.Parsing
                             idx++; // consume ELSEIF line
                             if (t2.Count < 2) throw Err(ln2, "ELSEIF missing condition.");
 
-                            Arg cond2 = ParseArgTokens(ln2, t2.Skip(1).ToList()).SingleOrDefault()
-                                        ?? throw Err(ln2, "ELSEIF missing condition.");
+                            Arg cond2 = ParseSingleArg(ln2, t2.Skip(1).ToList(), "ELSEIF condition");
 
                             Block body2 = ParseBlock(lines, ref idx, untilEndKeywords: true, out string? stop2);
                             branches.Add((cond2, body2));
@@ -136,8 +133,7 @@ namespace EasyShell.Parsing
                 if (head.Equals("WHILE", StringComparison.OrdinalIgnoreCase))
                 {
                     if (tokens.Count < 2) throw Err(lineNo, "WHILE missing condition.");
-                    Arg condArg = ParseArgTokens(lineNo, tokens.Skip(1).ToList()).SingleOrDefault()
-                                  ?? throw Err(lineNo, "WHILE missing condition.");
+                    Arg condArg = ParseSingleArg(lineNo, tokens.Skip(1).ToList(), "WHILE condition");
 
                     Block body = ParseBlock(lines, ref idx, untilEndKeywords: true, out string? stop);
                     if (stop != "END")
@@ -218,6 +214,27 @@ namespace EasyShell.Parsing
             }
 
             return line;
+        }
+
+        /// <summary>
+        /// Reads exactly one value where the grammar allows exactly one - the value of an
+        /// assignment, or a condition.
+        ///
+        /// <para>Forgetting the parentheses (`IF == $X 1` rather than `IF (== $X 1)`) is the easiest
+        /// mistake to make in this language, and it used to surface as LINQ's "Sequence contains
+        /// more than one element" from SingleOrDefault: an unhandled crash, with no line number and
+        /// nothing pointing at the parentheses. It is a script error like any other.</para>
+        /// </summary>
+        private Arg ParseSingleArg(int line, List<Token> tokens, string what)
+        {
+            List<Arg> args = ParseArgTokens(line, tokens);
+
+            return args.Count switch
+            {
+                1 => args[0],
+                0 => throw Err(line, $"{what} is missing its value."),
+                _ => throw Err(line, $"{what} takes a single value; wrap the expression in parentheses, e.g. ({string.Join(" ", tokens.Select(t => t.Text))}).")
+            };
         }
 
         private EasyShellException Err(int line, string msg)

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--Needed only by TerminalState's opaque termios roundtrip-->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.2.0</Version>
+    <AssemblyTitle>Easy Shell</AssemblyTitle>
+    <!--Depends on entire .Net runtime-->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+</Project>

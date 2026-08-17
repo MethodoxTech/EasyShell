@@ -40,9 +40,21 @@ namespace EasyShell
         /// <summary>
         /// REPL use.
         /// Execute a unit and return the value of the last statement if it was a CommandStmt; else Null.
+        ///
+        /// <para>The context that top-level command is executed in follows the runtime's interactive
+        /// mode, and the distinction matters more than it looks. At a prompt, `python` is a command
+        /// the person wants to <i>run</i> - a statement - so it takes the terminal and produces no
+        /// value. Executed as an expression instead, its output would be captured through pipes,
+        /// which is what made every interactive program exit immediately or hang. When the runtime
+        /// is not interactive, RunUnit stays an evaluator: the text comes back as the value, which
+        /// is what a host embedding EasyShell to compute something expects.</para>
+        ///
+        /// <para>Sub-expressions are unaffected either way: `$sha = (git rev-parse HEAD)` captures,
+        /// because there the text really is the value.</para>
         /// </summary>
         public Value RunUnit(string unitText, string? origin = null)
         {
+            bool statementContext = Executor.IsInteractive(_rt);
             Parser parser = new(origin);
             Block block = parser.Parse(unitText);
 
@@ -52,7 +64,7 @@ namespace EasyShell
                 foreach (Statement stmt in block.Statements)
                 {
                     if (stmt is CommandStatement c)
-                        last = Executor.ExecuteCommand(_rt, c.Args, c.Line);
+                        last = Executor.ExecuteCommand(_rt, c.Args, c.Line, statementContext);
                     else
                         Executor.ExecuteStatement(_rt, stmt);
                 }

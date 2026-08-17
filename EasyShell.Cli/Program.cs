@@ -1,4 +1,5 @@
 ﻿using EasyShell.Exceptions;
+using EasyShell.Interactive;
 using System;
 using System.IO;
 using System.Linq;
@@ -8,7 +9,7 @@ namespace EasyShell
     public static class Program
     {
         #region Configurations
-        private const string Version = "0.1.0";
+        private const string Version = "0.2.0";
 
         private static readonly string HelpText = """
             Easy Shell (easyshell) - a tiny scripting language.
@@ -113,6 +114,14 @@ namespace EasyShell
 
               A non-zero exit code aborts the script by default.
 
+              RUN <program> [args...]
+                Runs a program even when a built-in or alias has the same name, which is the
+                only way to reach the real `print`, `rm`, `cp`, `mv` or `zip` on PATH.
+
+              At the REPL a statement-context program runs in the FOREGROUND, on this terminal,
+              so `python`, `pwsh`, `vim` and anything else interactive work as they should.
+              Scripts capture through pipes instead - see $EasyInteractive below.
+
             Script arguments:
               easy Publish.easy --incremental
                 HASARG "--incremental"      TRUE when that flag was passed (case-insensitive)
@@ -127,6 +136,11 @@ namespace EasyShell
                                           instead of aborting. Default FALSE.
               $EasyProcessTimeoutSeconds  Wall-clock limit per external program; the
                                           process tree is killed on expiry. 0/unset = no limit.
+              $EasyInteractive            TRUE to run statement-context programs in the
+                                          foreground on this terminal instead of capturing
+                                          them. Set by the REPL; FALSE in scripts, where a
+                                          closed stdin is what stops a prompting tool from
+                                          blocking forever. Expression context always captures.
             """;
         #endregion
 
@@ -149,7 +163,8 @@ namespace EasyShell
             if (args.Length == 0 || args.Contains("--repl", StringComparer.OrdinalIgnoreCase))
             {
                 Runtime rt = GetPresetRuntime(Directory.GetCurrentDirectory(), []);
-                return EasyShellRepl.Run(HelpText, Version, rt);
+                Console.WriteLine($"Easy Shell {Version}  (:help for help)");
+                return EasyShellRepl.Run(new ReplOptions { Runtime = rt, HelpText = HelpText });
             }
 
             // Process shell script

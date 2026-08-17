@@ -57,16 +57,63 @@ Enhancement:
 
 Issues:
 
+- [x] (Language) **`0` and `1` used to be boolean literals**, so `$i = 0` declared a BOOL, not an
+      INT: a counter written the obvious way never advanced, and the `WHILE (< $i 3)` around it
+      never ran even once, in silence. `Value.FromLiteralToken` asked `TryParseBool` - which
+      accepts "1"/"0" alongside TRUE/YES/FALSE/NO - before it asked the number parsers. The
+      numeric parses go first now. Nothing was lost: `IF 1` is still true because a non-zero INT
+      is truthy, and `(== $Flag 1)` still holds because comparison falls back to comparing both
+      sides as booleans when they are not both numeric.
+- [ ] (Language) A numeric-looking literal loses its formatting when stored as text:
+      `STRINGVAR Version 1.0` holds `"1"`, because the token became the double 1.0 before the
+      declared kind coerced it back to a string. Quoting it - `STRINGVAR Version "1.0"` - is the
+      answer today. Fixing it properly means a Value remembering the text it was parsed from.
 - [ ] (Runtime) Currently `$a` is interpreted and the program will attempt to invoke the interpreted result as command. Maybe in this case we should avoid the command being interpretable from variables/expressions? Although it could be a feature that command themselves can be variables.
 
 Unit Test
 
-- [ ] Aliases
-- [ ] Script `exit` and function `return`
+- [x] Aliases - `EasyShell.Tests/AliasTests.cs` walks the whole table: `print`, `cwd`/`cd`,
+      `joinpath`/`resolve`/`exists`, `setenv`/`getenv`, `mkdir`/`rm`/`removeall`/`cp`/`mv`,
+      `format`, `rpl`/`regrpl`, `zip`, `sqrt`, `getdate`, `hasarg`/`arg`.
+- [x] Script `exit` and function `return` - `ControlFlowTests.cs`, including `exit` unwinding out
+      of blocks and functions, `RETURN` at the top level, and the difference between the two at a
+      prompt (`RETURN` ends the unit, `exit` reaches the host).
+- [ ] Something in CI, so the suite runs on every push rather than only when someone remembers.
+      The repository has no workflows at all today.
+
+Structure:
+
+- [x] Split the CLI executable into its own project (`EasyShell.Cli`) so the engine is a plain
+      library and other projects can join the solution.
+- [x] A unit-test project in the same solution: `EasyShell.Tests` (xUnit). `dotnet test` runs it,
+      and both publish scripts gate on it unless `--skip-tests` is passed.
 
 REPL:
 
 - [ ] In REPL, if a command has return value, we automatically print it, e.g. we can implement cwd this way as a function that returns a string - map directly to C# function.
+- [x] Interactive programs at the prompt. `python`, `pwsh` and `vim` used to exit immediately or
+      hang, because a statement-context program was captured through pipes and handed a closed
+      stdin. `$EasyInteractive` (set by the REPL) now runs them in the foreground on the terminal;
+      scripts are unchanged, and expression context still captures.
+- [x] The prompt loop is reusable: `EasyShell.Interactive.EasyShellRepl.Run(ReplOptions)`. A host
+      supplies a banner, prompt and built-ins; block accumulation, `exit` codes and error handling
+      are shared. HeadlessTerm's RetroShell is the second consumer.
+- [x] `RUN <program>` to reach a program past a built-in or alias of the same name (`print`, `rm`,
+      `cp`, `mv` and `zip` are all aliases here and real programs on PATH).
+
+Issues:
+
+- [x] A dotted command name was always treated as a .NET call unless it was a file in the working
+      directory, which made `vim.tiny`, `python3.12`, `node.exe` and every Windows `.cmd`/`.bat`
+      unreachable. `ProgramResolver` asks PATH instead.
+- [x] Recognizing those names was only half of it: the OS launcher does not do the same lookup we
+      do. `ProcessInvoker` now starts the *resolved* path (CreateProcess appends ".exe" only to a
+      name with no extension at all, so `python3.12` would be found and then fail to start), and
+      runs a `.bat`/`.cmd` through `cmd.exe /c`, which CreateProcess cannot execute directly.
+      **Verified on Linux only** - the Windows half wants one run on a Windows machine.
+- [x] `IF == $X 1` - the missing parentheses everyone writes at least once - came out of LINQ's
+      `SingleOrDefault` as "Sequence contains more than one element" with no line number. It is a
+      script error naming the line and suggesting the parentheses.
 
 Documentation:
 

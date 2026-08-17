@@ -12,11 +12,18 @@ print "Publish for Final Packaging build."
 cd $EasyScriptRoot
 stringvar PublishFolder (JoinPath $EasyScriptRoot "\..\..\..\Publish\Utilities\EasyShell\Current")
 
+# Do not publish something that does not pass its own tests.
+# Pass --skip-tests when you know what you are doing: easy BuildEasyShell.easy --skip-tests
+IF (NOT (hasarg "--skip-tests"))
+    print "Running unit tests."
+    dotnet test (JoinPath $EasyScriptRoot "\..\EasyShell.Tests") --nologo
+END
+
 # Delete current data
 remove $PublishFolder
 
 # Publish Executable
-dotnet publish (JoinPath $EasyScriptRoot "\..\..\..\External\EasyShell") --use-current-runtime --self-contained --output $PublishFolder
+dotnet publish (JoinPath $EasyScriptRoot "\..\..\..\External\EasyShell\EasyShell.Cli") --use-current-runtime --self-contained --output $PublishFolder
 
 # Validation
 assert (EXISTS (JoinPath $PublishFolder "easy.pdb")) "Build failed."

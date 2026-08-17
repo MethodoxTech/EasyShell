@@ -1,6 +1,7 @@
 ﻿using EasyShell.Exceptions;
 using System;
 using System.IO;
+using System.Linq;
 
 namespace EasyShell
 {
@@ -112,8 +113,14 @@ namespace EasyShell
 
               A non-zero exit code aborts the script by default.
 
+            Script arguments:
+              easy Publish.easy --incremental
+                HASARG "--incremental"      TRUE when that flag was passed (case-insensitive)
+                ARG 0                       The argument at that position, or "" when absent
+
             Global variables:
               $EasyScriptRoot $IsWindows $IsLinux $IsMacOS
+              $EasyArgs $EasyArgCount     Arguments passed to the script, joined and counted.
 
               $LAST_EXIT_CODE             Exit code of the last external program.
               $EasyContinueOnError        Set TRUE to let non-zero exit codes through
@@ -141,7 +148,7 @@ namespace EasyShell
             // Repl
             if (args.Length == 0 || args.Contains("--repl", StringComparer.OrdinalIgnoreCase))
             {
-                Runtime rt = GetPresetRuntime(Directory.GetCurrentDirectory());
+                Runtime rt = GetPresetRuntime(Directory.GetCurrentDirectory(), []);
                 return EasyShellRepl.Run(HelpText, Version, rt);
             }
 
@@ -155,7 +162,8 @@ namespace EasyShell
             try
             {
                 string scriptRoot = Path.GetDirectoryName(Path.GetFullPath(scriptPath)) ?? "";
-                Runtime rt = GetPresetRuntime(scriptRoot);
+                // Everything after the script path belongs to the script, not to easy itself
+                Runtime rt = GetPresetRuntime(scriptRoot, [.. args.Skip(1)]);
                 EasyShellEngine engine = new(rt);
 
                 string text = File.ReadAllText(scriptPath);
@@ -176,13 +184,18 @@ namespace EasyShell
         #endregion
 
         #region Helpers
-        private static Runtime GetPresetRuntime(string scriptRoot)
+        private static Runtime GetPresetRuntime(string scriptRoot, string[] scriptArguments)
         {
             Runtime rt = new();
             rt.InjectString("$EasyScriptRoot", scriptRoot);
             rt.InjectBool("$IsWindows", System.OperatingSystem.IsWindows());
             rt.InjectBool("$IsLinux", System.OperatingSystem.IsLinux());
             rt.InjectBool("$IsMacOS", System.OperatingSystem.IsMacOS());
+
+            // Injected as a string for the common "did they pass anything at all" check; HASARG and ARG read the list itself
+            Commands.CommonUtilities.SetScriptArguments(scriptArguments);
+            rt.InjectString("$EasyArgs", string.Join(" ", scriptArguments));
+            rt.InjectInt("$EasyArgCount", scriptArguments.Length);
             return rt;
         }
         #endregion

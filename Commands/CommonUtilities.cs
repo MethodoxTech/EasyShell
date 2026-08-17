@@ -20,6 +20,37 @@ namespace EasyShell.Commands
         public const int DeleteRetryBaseDelayMilliseconds = 150;
         #endregion
 
+        #region Script Arguments
+        /// <summary>
+        /// Everything after the script path on the command line, in order.
+        /// </summary>
+        /// <remarks>
+        /// Static rather than carried on the runtime so that the argument commands can be ordinary aliases to .Net members, like every other built-in, instead of needing their own case in the executor.
+        /// </remarks>
+        private static string[] ScriptArguments = [];
+
+        /// <summary>Called once at startup; scripts see the result through HASARG and ARG.</summary>
+        public static void SetScriptArguments(string[] arguments)
+            => ScriptArguments = arguments ?? [];
+        /// <summary>
+        /// HASARG &lt;name&gt; -> whether that flag was passed to the script, ignoring case.
+        ///
+        /// A build script's flags are the reason this exists: `easy Publish.easy --incremental`
+        /// asks for a faster build, and the script needs to be able to see that.
+        /// </summary>
+        public static bool HasArgument(string name)
+            => !string.IsNullOrWhiteSpace(name)
+            && ScriptArguments.Any(argument => string.Equals(argument, name, StringComparison.OrdinalIgnoreCase));
+        /// <summary>
+        /// ARG &lt;index&gt; -> the argument at that position, or an empty string when there is none.
+        /// </summary>
+        /// <remarks>
+        /// Out of range returns empty rather than throwing: a script asking for an optional argument would otherwise have to guard every read with a count check.
+        /// </remarks>
+        public static string Argument(int index)
+            => index >= 0 && index < ScriptArguments.Length ? ScriptArguments[index] : string.Empty;
+        #endregion
+
         #region Path
         /// <summary>
         /// JOINPATH &lt;part&gt; &lt;part&gt; [...] -> a single path using this platform's separator.
@@ -111,6 +142,33 @@ namespace EasyShell.Commands
 
             // Nothing to remove
             return false;
+        }
+        /// <summary>
+        /// REMOVEALL &lt;folder&gt; &lt;pattern&gt; [recursive] -> how many files were deleted
+        ///
+        /// Deletes every file matching a wildcard pattern, recursively by default. Build scripts
+        /// almost always need this at the end of a publish - stripping XML documentation, PDBs or
+        /// leftover native stubs out of an output folder - and doing it with REMOVE means knowing
+        /// every file name in advance, which nobody does.
+        ///
+        /// Only files are matched; directories are left alone, so a pattern like "*" cannot quietly
+        /// take a folder with it. A folder that does not exist is not an error - there was nothing
+        /// to delete, which is the state the caller wanted.
+        /// </summary>
+        public static int RemoveAll(string folder, string pattern, bool recursive = true)
+        {
+            if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(pattern))
+                return 0;
+
+            folder = ExpandPath(folder);
+            if (!Directory.Exists(folder))
+                return 0;
+
+            string[] matches = Directory.GetFiles(folder, pattern,
+                recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+            foreach (string match in matches)
+                DeleteFileWithRetry(match);
+            return matches.Length;
         }
         /// <summary>
         /// COPY <source> -> <target>

@@ -44,10 +44,14 @@ namespace EasyShell
                 // Env
                 ["setenv"] = "System.Environment.SetEnvironmentVariable",
                 ["getenv"] = "System.Environment.GetEnvironmentVariable",
+                // Script arguments
+                ["hasarg"] = "EasyShell.Commands.CommonUtilities.HasArgument",
+                ["arg"] = "EasyShell.Commands.CommonUtilities.Argument",
                 // File Sys
                 ["mkdir"] = "System.IO.Directory.CreateDirectory",
                 ["remove"] = "EasyShell.Commands.CommonUtilities.Remove",
                 ["rm"] = "EasyShell.Commands.CommonUtilities.Remove", // Shorthand
+                ["removeall"] = "EasyShell.Commands.CommonUtilities.RemoveAll", // By wildcard, recursive by default
                 ["cp"] = "EasyShell.Commands.CommonUtilities.Copy",
                 ["mv"] = "EasyShell.Commands.CommonUtilities.Move",
                 // STDIO

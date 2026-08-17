@@ -42,6 +42,8 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * Instance: `System.DateTime.AddDays $Now 15` (first argument is the target)
   * Instance on a handle: `CALL $handle MethodName [args...]`
 * **External process execution** for non-keyword, non-qualified commands
+* **Script arguments** via `HASARG` / `ARG` and `$EasyArgs`
+* **File system commands** including `REMOVEALL` for deleting by wildcard
 * **Comments** with `#`
 
 ## Usage Guide
@@ -219,6 +221,47 @@ $Total = (+ "10" 1)        # 11 - both operands are numeric, so this is still ar
 
 > Prefer `||` whenever you mean concatenation regardless of what the values look like -
 > `+` only falls back once something is genuinely non-numeric.
+
+### Script Arguments
+
+Everything after the script path belongs to the script:
+
+```bash
+easy Publish.easy --incremental
+```
+
+```easy
+IF (hasarg "--incremental")
+  print "Skipping the clean step."
+END
+
+print (|| "Called with " $EasyArgCount " argument(s): " $EasyArgs)
+print (arg 0)     # "--incremental"; an index that is not there reads as ""
+```
+
+`HASARG` ignores case. `ARG` returns an empty string rather than failing when the index is out of
+range, so an optional argument needs no guard around it.
+
+### File System Commands
+
+* `MKDIR <path>`, `REMOVE`/`RM <path>`, `CP <source> <target>`, `MV <source> <target>`
+* `EXISTS <path>` - true for a file or a directory
+* `JOINPATH <part> <part> [...]`, `RESOLVE <path>`
+* `REMOVEALL <folder> <pattern> [recursive]` - deletes every **file** matching a wildcard and
+  answers with how many went, recursively unless told otherwise
+
+```easy
+# Strip XML documentation out of a publish folder, at any depth
+$Removed = (removeall $PublishFolder "*.xml")
+print (|| "Deleted " $Removed " XML file(s).")
+
+# Only the top folder
+removeall $PublishFolder "*.log" FALSE
+```
+
+Directories are never matched, so a pattern like `*` cannot quietly take a folder with it, and a
+folder that does not exist deletes nothing rather than failing - it is already in the state the
+caller asked for.
 
 ### Control Flow
 
@@ -405,6 +448,8 @@ Then creates a package in:
 
 * v0.1.0: Initial setup.
 * v0.1.1 (Unreleased):
+  * Script arguments: `HASARG`, `ARG`, `$EasyArgs`, `$EasyArgCount`
+  * `REMOVEALL <folder> <pattern> [recursive]` for deleting files by wildcard
   * String concatenation: `||` / `CONCAT` / `APPEND`, and `+` when an operand is not a number
   * Instance members as command names: `System.DateTime.AddDays $Now 15`
   * Overload matching honors optional parameters and `params` arrays

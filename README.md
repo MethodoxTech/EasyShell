@@ -53,6 +53,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 |---|---|
 | `EasyShell/` | The library: parser, runtime, executor, reflection, process invocation, terminal state, and the shared interactive prompt loop under `Interactive/`. |
 | `EasyShell.Cli/` | The `easy` executable - argument handling and the help text, and nothing else. |
+| `EasyShell.Tests/` | The unit tests. See [Testing](#testing). |
 
 The library has no dependencies beyond the .NET runtime, and that is a constraint worth keeping:
 `easy` is a build tool that has to clone and build on its own, and a host that embeds the engine
@@ -400,6 +401,29 @@ print (System.String.Format "{0}-{1}-{2}-{3}" 1 2 3 4)   # params object[]
 * Alternatively, EasyShell binary
 * Alternatively, build directly with `dotnet`
 
+### Testing
+
+```bash
+dotnet test
+```
+
+`EasyShell.Tests` is an xUnit project covering the parser and tokenizer, value and variable
+semantics, every built-in command and alias, control flow including `EXIT` and `RETURN`, the
+reflection binder, external process execution (capture, foreground, exit codes and the wall-clock
+timeout) and the interactive prompt loop. It has no dependencies of its own beyond the test runner,
+and it runs in a few seconds.
+
+Two things about it are worth knowing before adding to it:
+
+* **Tests do not run in parallel**, deliberately. A shell is made of process-global state -
+  `Console.In`/`Console.Out`, the working directory, `PATH`, the script-argument table - and the
+  tests borrow all of it. See `AssemblyInfo.cs`.
+* **External programs are written by the tests themselves** (`Infrastructure/ProgramProbe.cs`),
+  as `sh` scripts on Unix and `.cmd` on Windows, in a temporary folder placed on `PATH`. Borrowing
+  a system program instead would make the tests depend on what happens to be installed.
+
+The publish scripts run the tests before publishing. Pass `--skip-tests` to skip that.
+
 ### Build
 
 Use `pwsh` from the `BuildScripts` folder:
@@ -433,6 +457,8 @@ Expected folder structure:
 │     │  └─ EasyShell.csproj
 │     ├─ EasyShell.Cli/          # the `easy` executable
 │     │  └─ EasyShell.Cli.csproj
+│     ├─ EasyShell.Tests/        # the unit tests
+│     │  └─ EasyShell.Tests.csproj
 │     ├─ Examples/
 │     └─ EasyShell.sln
 ├─ Publish/

@@ -80,7 +80,6 @@ namespace EasyShell
         {
             ProcessStartInfo psi = new()
             {
-                FileName = exe,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -91,9 +90,7 @@ namespace EasyShell
                 RedirectStandardInput = true,
                 CreateNoWindow = true
             };
-
-            foreach (string a in args)
-                psi.ArgumentList.Add(a);
+            SetProgram(psi, exe, args);
 
             StringBuilder stdout = new();
             StringBuilder stderr = new();
@@ -174,13 +171,10 @@ namespace EasyShell
         {
             ProcessStartInfo psi = new()
             {
-                FileName = exe,
                 // No Redirect* at all: that single omission is what makes the child interactive.
                 UseShellExecute = false,
             };
-
-            foreach (string a in args)
-                psi.ArgumentList.Add(a);
+            SetProgram(psi, exe, args);
 
             // While the child owns the foreground, Ctrl+C is addressed to it. On Unix the tty
             // signals the whole foreground process group, so without this the shell would exit
@@ -229,16 +223,13 @@ namespace EasyShell
         {
             ProcessStartInfo psi = new()
             {
-                FileName = exe,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = true,
                 CreateNoWindow = true
             };
-
-            foreach (string a in args)
-                psi.ArgumentList.Add(a);
+            SetProgram(psi, exe, args);
 
             StringBuilder stdout = new();
             StringBuilder stderr = new();
@@ -301,6 +292,38 @@ namespace EasyShell
         #endregion
 
         #region Routines
+        /// <summary>
+        /// Decides what is actually launched, which is not always what was typed.
+        ///
+        /// <para>The name goes through <see cref="ProgramResolver"/> first and the resolved path is
+        /// what starts, because the OS launcher does not do the same lookup we do. On Windows,
+        /// CreateProcess appends ".exe" only to a name with no extension at all, so `python3.12`
+        /// and `vim.tiny` - the very names ProgramResolver exists to recognize - would be found and
+        /// then fail to start. Handing over the full path skips that entire question.</para>
+        ///
+        /// <para>A .bat or .cmd is not an executable image at all: CreateProcess cannot run one, and
+        /// UseShellExecute is off (deliberately - it defeats redirection). Those go through
+        /// `cmd.exe /c`, which is what makes a Windows build script reachable as a command.</para>
+        /// </summary>
+        private static void SetProgram(ProcessStartInfo psi, string exe, IEnumerable<string> args)
+        {
+            string target = ProgramResolver.Resolve(exe) ?? exe;
+
+            if (OperatingSystem.IsWindows() && IsBatchScript(target))
+            {
+                psi.FileName = Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe";
+                psi.ArgumentList.Add("/c");
+                psi.ArgumentList.Add(target);
+            }
+            else
+                psi.FileName = target;
+
+            foreach (string a in args)
+                psi.ArgumentList.Add(a);
+        }
+        private static bool IsBatchScript(string path)
+            => path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
         /// <summary>
         /// Waits for the process to exit, and ONLY for that.
         ///

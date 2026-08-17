@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyShell", "EasyShell\Easy
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyShell.Cli", "EasyShell.Cli\EasyShell.Cli.csproj", "{3C7A1E64-9D28-42F1-9A5B-8E0C74B1D2A7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyShell.Tests", "EasyShell.Tests\EasyShell.Tests.csproj", "{9F1C0B3D-7E45-4A16-B2C8-5D6E3F0A9B41}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{3C7A1E64-9D28-42F1-9A5B-8E0C74B1D2A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3C7A1E64-9D28-42F1-9A5B-8E0C74B1D2A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3C7A1E64-9D28-42F1-9A5B-8E0C74B1D2A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F1C0B3D-7E45-4A16-B2C8-5D6E3F0A9B41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F1C0B3D-7E45-4A16-B2C8-5D6E3F0A9B41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F1C0B3D-7E45-4A16-B2C8-5D6E3F0A9B41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F1C0B3D-7E45-4A16-B2C8-5D6E3F0A9B41}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

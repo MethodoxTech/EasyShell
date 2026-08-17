@@ -1,6 +1,7 @@
 # Unfortunately a ps1 script is needed to build the first ever `easy` on a fresh platform...
 param(
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [switch]$SkipTests
 )
 
 Write-Host "Publish for Final Packaging build."
@@ -12,7 +13,17 @@ $BuildRoot   = (Get-Item -LiteralPath $ScriptRoot).Parent.Parent.Parent.FullName
 # Paths
 $PublishFolder  = Join-Path $BuildRoot 'Publish/Utilities/EasyShell/Current'
 $ProjectPath    = Join-Path $BuildRoot 'External/EasyShell/EasyShell.Cli'
+$TestsPath      = Join-Path $BuildRoot 'External/EasyShell/EasyShell.Tests'
 $ArchiveFolder  = Join-Path $BuildRoot 'Publish/Packages'
+
+# Do not publish something that does not pass its own tests
+if (-not $SkipTests) {
+    Write-Host "Running unit tests."
+    dotnet test $TestsPath --nologo
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unit tests failed with exit code $LASTEXITCODE."
+    }
+}
 
 # Clean publish folder
 if (Test-Path -LiteralPath $PublishFolder) {

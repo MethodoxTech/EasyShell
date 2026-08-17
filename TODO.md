@@ -57,18 +57,36 @@ Enhancement:
 
 Issues:
 
+- [ ] (Language, needs a decision) **`0` and `1` are boolean literals**, so `$i = 0` declares a
+      BOOL, not an INT. A counter written the obvious way - `$i = 0` then `$i = (+ $i 1)` - never
+      advances, and a `WHILE (< $i 3)` around it never runs even once, silently. `INTVAR i 0` is
+      the working spelling today. `Value.FromLiteralToken` asks `TryParseBool` before it asks the
+      number parsers, and `TryParseBool` accepts "1"/"0" alongside TRUE/YES/FALSE/NO; the same
+      ordering also makes `STRINGVAR V 1.0` hold "1". Moving the numeric parses ahead of the
+      boolean one fixes it, and `(== $Flag 1)` keeps working because the comparison falls back to
+      a boolean comparison when only one side is numeric - but it *is* a change in language
+      semantics, so it wants a deliberate yes. Pinned meanwhile by
+      `ValueTests.ZeroAndOneAreReadAsBooleansToday` and
+      `ControlFlowTests.ACounterDeclaredByAssignmentDoesNotWorkYet`.
 - [ ] (Runtime) Currently `$a` is interpreted and the program will attempt to invoke the interpreted result as command. Maybe in this case we should avoid the command being interpretable from variables/expressions? Although it could be a feature that command themselves can be variables.
 
 Unit Test
 
-- [ ] Aliases
-- [ ] Script `exit` and function `return`
+- [x] Aliases - `EasyShell.Tests/AliasTests.cs` walks the whole table: `print`, `cwd`/`cd`,
+      `joinpath`/`resolve`/`exists`, `setenv`/`getenv`, `mkdir`/`rm`/`removeall`/`cp`/`mv`,
+      `format`, `rpl`/`regrpl`, `zip`, `sqrt`, `getdate`, `hasarg`/`arg`.
+- [x] Script `exit` and function `return` - `ControlFlowTests.cs`, including `exit` unwinding out
+      of blocks and functions, `RETURN` at the top level, and the difference between the two at a
+      prompt (`RETURN` ends the unit, `exit` reaches the host).
+- [ ] Something in CI, so the suite runs on every push rather than only when someone remembers.
+      The repository has no workflows at all today.
 
 Structure:
 
 - [x] Split the CLI executable into its own project (`EasyShell.Cli`) so the engine is a plain
       library and other projects can join the solution.
-- [ ] Consider a unit-test project in the same solution now that there is room for one.
+- [x] A unit-test project in the same solution: `EasyShell.Tests` (xUnit). `dotnet test` runs it,
+      and both publish scripts gate on it unless `--skip-tests` is passed.
 
 REPL:
 
@@ -88,6 +106,14 @@ Issues:
 - [x] A dotted command name was always treated as a .NET call unless it was a file in the working
       directory, which made `vim.tiny`, `python3.12`, `node.exe` and every Windows `.cmd`/`.bat`
       unreachable. `ProgramResolver` asks PATH instead.
+- [x] Recognizing those names was only half of it: the OS launcher does not do the same lookup we
+      do. `ProcessInvoker` now starts the *resolved* path (CreateProcess appends ".exe" only to a
+      name with no extension at all, so `python3.12` would be found and then fail to start), and
+      runs a `.bat`/`.cmd` through `cmd.exe /c`, which CreateProcess cannot execute directly.
+      **Verified on Linux only** - the Windows half wants one run on a Windows machine.
+- [x] `IF == $X 1` - the missing parentheses everyone writes at least once - came out of LINQ's
+      `SingleOrDefault` as "Sequence contains more than one element" with no line number. It is a
+      script error naming the line and suggesting the parentheses.
 
 Documentation:
 

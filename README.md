@@ -166,9 +166,16 @@ $Title = (System.String.Format "Count={0}" $Count)
 ### Literals
 
 * Strings: `"hello world"`
-* Booleans: `TRUE`, `FALSE` (also accepts common equivalents)
+* Booleans: `TRUE`, `FALSE` (also accepts `YES`/`NO`)
 * Integers: `123`
 * Doubles: `3.14`
+
+An unquoted word that looks like a number **is** a number, `0` and `1` included, so `$i = 0`
+declares an INT and counts the way you would expect. They still read as conditions where one is
+wanted - `IF 1`, and `(== $Flag 1)` against a boolean - because a non-zero number is true and a
+comparison falls back to comparing both sides as booleans when they are not both numeric.
+
+Quoting is what keeps a literal a string: `"1.0"` is a version, `1.0` is the number one.
 
 ### Commands
 

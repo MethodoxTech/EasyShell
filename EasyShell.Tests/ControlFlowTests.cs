@@ -56,19 +56,39 @@ namespace EasyShell.Tests
         }
 
         [Fact]
-        public void ACounterDeclaredByAssignmentDoesNotWorkYet()
+        public void ACounterDeclaredByAssignmentWorksToo()
         {
-            // Known issue, pinned here so a fix is noticed rather than a regression: `$i = 0`
-            // declares a BOOL, because the literal "0" is parsed as a boolean before the integer
-            // parser ever sees it (see ValueTests.ZeroAndOneAreReadAsBooleansToday). The loop
-            // below therefore never runs at all. INTVAR is the working spelling today.
-            Assert.Equal("", ScriptHost.Run("""
+            // The regression this guards is a quiet one: while the literal "0" was read as a
+            // boolean, `$i = 0` declared a BOOL, `(+ $i 1)` coerced straight back to TRUE, and
+            // the loop below never ran a single time without a word of complaint.
+            Assert.Equal(["i=0", "i=1", "i=2"], ScriptHost.Run("""
                 $i = 0
                 WHILE (< $i 3)
                     print (|| "i=" $i)
                     $i = (+ $i 1)
                 END
-                """).Output);
+                """).Lines);
+        }
+
+        [Fact]
+        public void AFlagStillReadsAsACondition()
+        {
+            // The other half of that change: comparing a boolean against 1, and using a number as
+            // a condition outright, both have to keep working.
+            Assert.Equal(["compared", "one", "zero"], ScriptHost.Run("""
+                BOOLVAR Flag TRUE
+                IF (== $Flag 1)
+                    print compared
+                END
+                IF 1
+                    print one
+                END
+                IF 0
+                    print never
+                ELSE
+                    print zero
+                END
+                """).Lines);
         }
 
         [Fact]

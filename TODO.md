@@ -57,17 +57,17 @@ Enhancement:
 
 Issues:
 
-- [ ] (Language, needs a decision) **`0` and `1` are boolean literals**, so `$i = 0` declares a
-      BOOL, not an INT. A counter written the obvious way - `$i = 0` then `$i = (+ $i 1)` - never
-      advances, and a `WHILE (< $i 3)` around it never runs even once, silently. `INTVAR i 0` is
-      the working spelling today. `Value.FromLiteralToken` asks `TryParseBool` before it asks the
-      number parsers, and `TryParseBool` accepts "1"/"0" alongside TRUE/YES/FALSE/NO; the same
-      ordering also makes `STRINGVAR V 1.0` hold "1". Moving the numeric parses ahead of the
-      boolean one fixes it, and `(== $Flag 1)` keeps working because the comparison falls back to
-      a boolean comparison when only one side is numeric - but it *is* a change in language
-      semantics, so it wants a deliberate yes. Pinned meanwhile by
-      `ValueTests.ZeroAndOneAreReadAsBooleansToday` and
-      `ControlFlowTests.ACounterDeclaredByAssignmentDoesNotWorkYet`.
+- [x] (Language) **`0` and `1` used to be boolean literals**, so `$i = 0` declared a BOOL, not an
+      INT: a counter written the obvious way never advanced, and the `WHILE (< $i 3)` around it
+      never ran even once, in silence. `Value.FromLiteralToken` asked `TryParseBool` - which
+      accepts "1"/"0" alongside TRUE/YES/FALSE/NO - before it asked the number parsers. The
+      numeric parses go first now. Nothing was lost: `IF 1` is still true because a non-zero INT
+      is truthy, and `(== $Flag 1)` still holds because comparison falls back to comparing both
+      sides as booleans when they are not both numeric.
+- [ ] (Language) A numeric-looking literal loses its formatting when stored as text:
+      `STRINGVAR Version 1.0` holds `"1"`, because the token became the double 1.0 before the
+      declared kind coerced it back to a string. Quoting it - `STRINGVAR Version "1.0"` - is the
+      answer today. Fixing it properly means a Value remembering the text it was parsed from.
 - [ ] (Runtime) Currently `$a` is interpreted and the program will attempt to invoke the interpreted result as command. Maybe in this case we should avoid the command being interpretable from variables/expressions? Although it could be a feature that command themselves can be variables.
 
 Unit Test

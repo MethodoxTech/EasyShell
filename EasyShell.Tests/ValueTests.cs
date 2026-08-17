@@ -21,15 +21,34 @@ namespace EasyShell.Tests
         }
 
         [Theory]
-        [InlineData("0")]
-        [InlineData("1")]
-        public void ZeroAndOneAreReadAsBooleansToday(string token)
+        [InlineData("0", 0)]
+        [InlineData("1", 1)]
+        public void ZeroAndOneAreNumbers(string token, int expected)
         {
-            // Documented rather than endorsed. TryParseBool accepts "1"/"0" before the number
-            // parsers ever see them, so `$i = 0` declares a BOOL - which is why a counter written
-            // as `$i = 0` / `$i = (+ $i 1)` never advances and its WHILE never runs. Use INTVAR
-            // for a counter until this is decided one way or the other; see TODO.md.
-            Assert.Equal(ValueKind.Bool, Value.FromLiteralToken(token, wasQuoted: false).Kind);
+            // They used to be booleans - TryParseBool accepts "1"/"0" and was asked first - which
+            // made `$i = 0` declare a BOOL and the obvious counter silently never advance.
+            Value v = Value.FromLiteralToken(token, wasQuoted: false);
+
+            Assert.Equal(ValueKind.Int, v.Kind);
+            Assert.Equal(expected, v.AsInt());
+        }
+
+        [Fact]
+        public void ANumberIsStillReadableAsACondition()
+        {
+            // Which is what makes preferring the number free: a flag compared against 1, or used
+            // as a condition outright, behaves exactly as it did.
+            Assert.True(new Value(ValueKind.Int, 1).AsBool());
+            Assert.False(new Value(ValueKind.Int, 0).AsBool());
+
+            Assert.True(TryBool("1"));
+            Assert.False(TryBool("0"));
+
+            static bool TryBool(string s)
+            {
+                Assert.True(Value.TryParseBool(s, out bool b));
+                return b;
+            }
         }
 
         [Theory]

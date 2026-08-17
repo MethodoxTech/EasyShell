@@ -23,7 +23,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 
 * **Default value interchange format is string**, but variables enforce a declared type.
 * Reflection invocation attempts to **match overloads by argument count + best conversion fit**.
-* External executable calls return **stdout** (or stderr when stdout is empty).
+* External executable calls return **stdout** (or stderr when stdout is empty) when used as an expression; at an interactive prompt a bare command instead takes the terminal, so `python`, `pwsh` and `vim` work.
 
 ## Features
 
@@ -41,10 +41,30 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * Static: `System.IO.File.WriteAllText "path" "content"`
   * Instance: `System.DateTime.AddDays $Now 15` (first argument is the target)
   * Instance on a handle: `CALL $handle MethodName [args...]`
-* **External process execution** for non-keyword, non-qualified commands
+* **External process execution** for non-keyword, non-qualified commands, captured in scripts
+  and run in the foreground at an interactive prompt
 * **Script arguments** via `HASARG` / `ARG` and `$EasyArgs`
 * **File system commands** including `REMOVEALL` for deleting by wildcard
 * **Comments** with `#`
+
+## Repository Layout
+
+| Project | |
+|---|---|
+| `EasyShell/` | The library: parser, runtime, executor, reflection, process invocation, terminal state, and the shared interactive prompt loop under `Interactive/`. |
+| `EasyShell.Cli/` | The `easy` executable - argument handling and the help text, and nothing else. |
+
+The library has no dependencies beyond the .NET runtime, and that is a constraint worth keeping:
+`easy` is a build tool that has to clone and build on its own, and a host that embeds the engine
+should not inherit that host's own dependency graph in return. Terminal handling is the case where
+this was tempting to break - it is why `TerminalState` is 150 lines of self-contained P/Invoke here
+rather than a reference to somebody's terminal library.
+
+Anything that a host embedding EasyShell could want belongs in the library. The prompt loop is the
+clearest case: HeadlessTerm's RetroShell wants an EasyShell prompt with its own banner, prompt
+string and built-ins, and nothing else of its own - so block accumulation, `exit` codes, error
+reporting and result printing live in `Interactive/EasyShellRepl.cs` and the differences are
+`ReplOptions`.
 
 ## Usage Guide
 
@@ -409,8 +429,12 @@ Expected folder structure:
 │     ├─ BuildScripts/
 │     │  ├─ BuildEasyShell.easy
 │     │  └─ BuildEasyShell.ps1
-│     ├─ EasyShell.csproj
-│     └─ ...
+│     ├─ EasyShell/              # the library - engine, parser, runtime, process invocation
+│     │  └─ EasyShell.csproj
+│     ├─ EasyShell.Cli/          # the `easy` executable
+│     │  └─ EasyShell.Cli.csproj
+│     ├─ Examples/
+│     └─ EasyShell.sln
 ├─ Publish/
 │  ├─ Utilities/
 │  │  └─ EasyShell/
@@ -432,7 +456,7 @@ So `BuildScripts` must be three levels below `<repo-root>`:
 <build-root>/External/EasyShell/BuildScripts
 ```
 
-The script publishes `External/EasyShell` into:
+The script publishes `External/EasyShell/EasyShell.Cli` into:
 
 ```txt
 <build-root>/Publish/Utilities/EasyShell/Current
@@ -455,6 +479,22 @@ Then creates a package in:
   * Overload matching honors optional parameters and `params` arrays
   * Errors from .NET calls report the script line, and report what the callee complained about
   * `#` inside a quoted string is no longer treated as a comment
+
+* v0.2.0 (Unreleased):
+  * Split into a library (`EasyShell/`) and the `easy` CLI (`EasyShell.Cli/`), so other projects
+    can join the solution and so hosts can reference the engine without pulling in an executable
+  * `ProcessInvoker.RunForeground` and `$EasyInteractive`: at an interactive prompt, a
+    statement-context external program inherits stdin/stdout/stderr instead of being captured
+    through pipes. Without it `python` and `pwsh` see a non-tty, skip their REPL and exit
+    immediately, and `vim` hangs on `/dev/tty`. Scripts are unchanged - a closed stdin is exactly
+    what keeps a prompting tool from blocking CI - and expression context always captures
+  * `RUN <program> [args...]` runs a program even when a built-in or alias shadows its name
+  * `TerminalState` snapshots and restores the tty around every foreground child, so a program
+    that dies without unwinding cannot leave the prompt in raw mode
+  * Dotted names are resolved against PATH before being treated as .NET calls, so `vim.tiny`,
+    `python3.12`, `node.exe` and every Windows `.cmd`/`.bat` are reachable at all
+  * The REPL loop moved into the library as `EasyShell.Interactive.EasyShellRepl` and takes
+    `ReplOptions`, so a host supplies only its banner, prompt and built-ins
 
 ## License
 

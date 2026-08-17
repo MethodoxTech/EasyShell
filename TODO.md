@@ -64,9 +64,30 @@ Unit Test
 - [ ] Aliases
 - [ ] Script `exit` and function `return`
 
+Structure:
+
+- [x] Split the CLI executable into its own project (`EasyShell.Cli`) so the engine is a plain
+      library and other projects can join the solution.
+- [ ] Consider a unit-test project in the same solution now that there is room for one.
+
 REPL:
 
 - [ ] In REPL, if a command has return value, we automatically print it, e.g. we can implement cwd this way as a function that returns a string - map directly to C# function.
+- [x] Interactive programs at the prompt. `python`, `pwsh` and `vim` used to exit immediately or
+      hang, because a statement-context program was captured through pipes and handed a closed
+      stdin. `$EasyInteractive` (set by the REPL) now runs them in the foreground on the terminal;
+      scripts are unchanged, and expression context still captures.
+- [x] The prompt loop is reusable: `EasyShell.Interactive.EasyShellRepl.Run(ReplOptions)`. A host
+      supplies a banner, prompt and built-ins; block accumulation, `exit` codes and error handling
+      are shared. HeadlessTerm's RetroShell is the second consumer.
+- [x] `RUN <program>` to reach a program past a built-in or alias of the same name (`print`, `rm`,
+      `cp`, `mv` and `zip` are all aliases here and real programs on PATH).
+
+Issues:
+
+- [x] A dotted command name was always treated as a .NET call unless it was a file in the working
+      directory, which made `vim.tiny`, `python3.12`, `node.exe` and every Windows `.cmd`/`.bat`
+      unreachable. `ProgramResolver` asks PATH instead.
 
 Documentation:
 

@@ -16,7 +16,7 @@ stringvar PublishFolder (JoinPath $EasyScriptRoot "\..\..\..\Publish\Utilities\E
 remove $PublishFolder
 
 # Publish Executable
-dotnet publish (JoinPath $EasyScriptRoot "\..\..\..\External\EasyShell") --use-current-runtime --self-contained --output $PublishFolder
+dotnet publish (JoinPath $EasyScriptRoot "\..\..\..\External\EasyShell\EasyShell.Cli") --use-current-runtime --self-contained --output $PublishFolder
 
 # Validation
 assert (EXISTS (JoinPath $PublishFolder "easy.pdb")) "Build failed."

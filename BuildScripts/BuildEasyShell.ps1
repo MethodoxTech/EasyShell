@@ -11,7 +11,7 @@ $BuildRoot   = (Get-Item -LiteralPath $ScriptRoot).Parent.Parent.Parent.FullName
 
 # Paths
 $PublishFolder  = Join-Path $BuildRoot 'Publish/Utilities/EasyShell/Current'
-$ProjectPath    = Join-Path $BuildRoot 'External/EasyShell'
+$ProjectPath    = Join-Path $BuildRoot 'External/EasyShell/EasyShell.Cli'
 $ArchiveFolder  = Join-Path $BuildRoot 'Publish/Packages'
 
 # Clean publish folder

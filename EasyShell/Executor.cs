@@ -25,6 +25,18 @@ namespace EasyShell
         public const string ProcessTimeoutVariable = "EasyProcessTimeoutSeconds";
         /// <summary>Set after every external program invocation.</summary>
         public const string LastExitCodeVariable = "LAST_EXIT_CODE";
+        /// <summary>
+        /// Script-settable variable. When TRUE, an external program used as a STATEMENT runs in the
+        /// foreground on the host's own terminal instead of being captured through pipes - which is
+        /// the difference between `python`, `pwsh` and `vim` working and them exiting immediately or
+        /// hanging. Expression context is unaffected: `$sha = (git rev-parse HEAD)` must still
+        /// capture, whatever this is set to.
+        ///
+        /// Default FALSE, because the captured path is the right one for a build script: closing
+        /// the child's stdin is what stops a tool that decides to prompt from blocking CI forever.
+        /// An interactive host turns it on - <see cref="Interactive.EasyShellRepl"/> does.
+        /// </summary>
+        public const string InteractiveVariable = "EasyInteractive";
         #endregion
 
         #region Command Mapping
@@ -120,7 +132,7 @@ namespace EasyShell
                 case CommandStatement cmd:
                     // Statement context: an external program streams its output live, so there is
                     // nothing left to echo afterwards (doing both printed everything twice).
-                    Value output = ExecuteCommand(rt, cmd.Args, cmd.Line, streamProcessOutput: true);
+                    Value output = ExecuteCommand(rt, cmd.Args, cmd.Line, statementContext: true);
                     if (output.Kind == ValueKind.String && !string.IsNullOrEmpty(output.Data as string))
                         Console.WriteLine(output.Data);
                     return;
@@ -150,7 +162,7 @@ namespace EasyShell
         private static List<Value> EvalArgs(Runtime rt, IEnumerable<Arg> args)
             => args.Select(a => EvaluateArg(rt, a)).ToList();
 
-        public static Value ExecuteCommand(Runtime rt, List<Arg> args, int line, bool streamProcessOutput = false)
+        public static Value ExecuteCommand(Runtime rt, List<Arg> args, int line, bool statementContext = false)
         {
             if (args.Count == 0)
                 return Value.Null;
@@ -161,6 +173,15 @@ namespace EasyShell
 
             if (string.IsNullOrWhiteSpace(cmdName))
                 return Value.Null;
+
+            // Built-in: RUN <program> [args...]
+            // The escape hatch past our own table: `print`, `rm`, `cp`, `mv` and `zip` are aliases
+            // here and real programs on PATH, so without RUN an alias shadows its program forever.
+            if (cmdName.Equals("RUN", StringComparison.OrdinalIgnoreCase) && args.Count >= 2)
+            {
+                List<string> runArgs = [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())];
+                return ExecuteExternal(rt, runArgs[0], runArgs.GetRange(1, runArgs.Count - 1), line, statementContext);
+            }
 
             // Command alias
             if (Aliases.TryGetValue(cmdName, out string? target))
@@ -382,39 +403,76 @@ namespace EasyShell
 
             // C# fully qualified member invocation or access - static, or instance with the first
             // argument as the target: System.DateTime.AddDays $when 15
-            if (!File.Exists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal))
+            //
+            // A dotted name is ambiguous - `vim.tiny`, `python3.12` and `node.exe` are programs -
+            // so it is a .NET call only when nothing runnable answers to it. See ProgramResolver.
+            if (!File.Exists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal)
+                && !ProgramResolver.Exists(cmdName))
                 return InvokeQualified(cmdName, EvalArgs(rt, args.Skip(1)), line);
 
             // External executable
-            {
-                List<string> callArgs = [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())];
+            return ExecuteExternal(rt, cmdName,
+                                   [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())],
+                                   line, statementContext);
+        }
 
-                ProcessInvoker.ProcessResult result;
+        /// <summary>
+        /// Run an external program, choosing between the foreground and the captured invocation.
+        ///
+        /// The choice is not a preference, it is a semantic requirement in both directions.
+        /// Expression context - `$sha = (git rev-parse HEAD)` - must capture, because the text is
+        /// the value. Statement context has no value to produce, so the only question is whether
+        /// the child should be given the terminal; an interactive host says yes, and that is the
+        /// difference between being able to type `vim` at a prompt and watching it hang.
+        /// </summary>
+        public static Value ExecuteExternal(Runtime rt, string program, List<string> arguments, int line, bool statementContext)
+        {
+            if (statementContext && IsInteractive(rt))
+            {
+                int foregroundExit;
                 try
                 {
-                    // In statement context stream live so long builds show progress; in expression
-                    // context stay quiet, because the caller wants the text as a value.
-                    Action<string>? sink = streamProcessOutput ? Console.WriteLine : null;
-                    result = ProcessInvoker.RunStreaming(cmdName, callArgs, sink, GetProcessTimeout(rt));
+                    foregroundExit = ProcessInvoker.RunForeground(program, arguments, GetProcessTimeout(rt));
                 }
                 catch (Exception e)
                 {
-                    throw new EasyShellException($"{line}: Failed to execute '{cmdName}': {e.Message}");
+                    throw new EasyShellException($"{line}: Failed to execute '{program}': {e.Message}");
                 }
 
-                // Record the exit code so scripts can inspect it even when continuing on error.
-                SetLastExitCode(rt, result.ExitCode);
-
-                if (result.ExitCode != 0 && !IsContinueOnError(rt))
-                    throw new EasyShellException(
-                        $"{line}: '{cmdName}' exited with code {result.ExitCode}. " +
-                        $"Set ${ContinueOnErrorVariable} to TRUE to ignore non-zero exit codes.");
-
-                // Nothing to hand back in statement context - it has already been printed.
-                return streamProcessOutput
-                    ? Value.Null
-                    : new Value(ValueKind.String, result.BestText);
+                CheckExitCode(rt, program, foregroundExit, line);
+                return Value.Null;   // the child wrote to the terminal itself; there is nothing to echo
             }
+
+            ProcessInvoker.ProcessResult result;
+            try
+            {
+                // In statement context stream live so long builds show progress; in expression
+                // context stay quiet, because the caller wants the text as a value.
+                Action<string>? sink = statementContext ? Console.WriteLine : null;
+                result = ProcessInvoker.RunStreaming(program, arguments, sink, GetProcessTimeout(rt));
+            }
+            catch (Exception e)
+            {
+                throw new EasyShellException($"{line}: Failed to execute '{program}': {e.Message}");
+            }
+
+            CheckExitCode(rt, program, result.ExitCode, line);
+
+            // Nothing to hand back in statement context - it has already been printed.
+            return statementContext
+                ? Value.Null
+                : new Value(ValueKind.String, result.BestText);
+        }
+
+        /// <summary>Record the exit code so scripts can inspect it, then abort unless told not to.</summary>
+        private static void CheckExitCode(Runtime rt, string program, int exitCode, int line)
+        {
+            SetLastExitCode(rt, exitCode);
+
+            if (exitCode != 0 && !IsContinueOnError(rt))
+                throw new EasyShellException(
+                    $"{line}: '{program}' exited with code {exitCode}. " +
+                    $"Set ${ContinueOnErrorVariable} to TRUE to ignore non-zero exit codes.");
         }
         #endregion
 
@@ -481,6 +539,9 @@ namespace EasyShell
         }
         private static bool IsContinueOnError(Runtime rt)
             => rt.TryGetVar(ContinueOnErrorVariable, out Variable? v) && v.Value.AsBool();
+        /// <summary>Whether this runtime is attached to a person at a terminal. See <see cref="InteractiveVariable"/>.</summary>
+        public static bool IsInteractive(Runtime rt)
+            => rt.TryGetVar(InteractiveVariable, out Variable? v) && v.Value.AsBool();
         private static TimeSpan? GetProcessTimeout(Runtime rt)
         {
             if (!rt.TryGetVar(ProcessTimeoutVariable, out Variable? v))

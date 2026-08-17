@@ -208,7 +208,8 @@ namespace EasyShell
             rt.InjectBool("$IsMacOS", System.OperatingSystem.IsMacOS());
 
             // Injected as a string for the common "did they pass anything at all" check; HASARG and ARG read the list itself
-            Commands.CommonUtilities.SetScriptArguments(scriptArguments);
+            Commands.CommonUtilities.SetScriptArguments(scriptArguments);   // legacy static path
+            rt.ScriptArguments = scriptArguments;                            // HASARG/ARG built-ins
             rt.InjectString("$EasyArgs", string.Join(" ", scriptArguments));
             rt.InjectInt("$EasyArgCount", scriptArguments.Length);
             return rt;

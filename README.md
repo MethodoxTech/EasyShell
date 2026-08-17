@@ -529,6 +529,22 @@ Then creates a package in:
   * The REPL loop moved into the library as `EasyShell.Interactive.EasyShellRepl` and takes
     `ReplOptions`, so a host supplies only its banner, prompt and built-ins
 
+* v0.3.0 (Unreleased):
+  * `EasyShell.Hosting`: the virtualization seam. A `Runtime` now carries a `ShellHost` -
+    console, filesystem, process runner, environment - defaulting to the real machine with
+    behavior unchanged. A host that substitutes all four (a virtual machine whose filesystem is
+    a portable image, whose processes are a virtual process table, whose console is a tty) gets
+    the entire language and REPL inside its world: same parser, same semantics, zero drift
+  * The machine-touching aliases (cd, cwd, resolve, exists, setenv, getenv, hasarg, arg, mkdir,
+    remove/rm, removeall, cp, mv, print, rpl, regrpl) became host-routed built-ins; only pure or
+    deliberately host-only targets (joinpath, format, sqrt, getdate, zip) remain reflection
+    aliases. Behavior on the default host is unchanged and pinned by the alias tests
+  * `ShellHost.CanInvokeQualified`: reflection policy. Direct .NET invocation is EasyShell's
+    superpower on the host and its biggest escape hatch in a sandbox; a virtualizing host can
+    refuse or allowlist fully-qualified names, and refusals read as ordinary script errors
+  * Script arguments (`HASARG`/`ARG`) are per-Runtime, so embedded sessions cannot see each
+    other's flags
+
 ## License
 
 MIT

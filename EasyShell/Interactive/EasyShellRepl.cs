@@ -70,7 +70,10 @@ namespace EasyShell.Interactive
             if (options.Interactive)
                 rt.AssignOrDeclare(Executor.InteractiveVariable, new Value(ValueKind.Bool, true));
 
-            Action<string> writeError = options.WriteError ?? Console.Error.WriteLine;
+            // All prompt I/O goes through the runtime's host, so the REPL follows the shell into
+            // a virtual machine (tty console) exactly as it runs on the real one (System.Console).
+            Hosting.IShellConsole console = rt.Host.Console;
+            Action<string> writeError = options.WriteError ?? console.WriteErrorLine;
             Func<string> prompt = options.Prompt ?? (() => "es> ");
             Func<string> continuation = options.ContinuationPrompt ?? (() => "... ");
 
@@ -81,10 +84,10 @@ namespace EasyShell.Interactive
 
             while (true)
             {
-                Console.Write(openBlocks > 0 ? continuation() : prompt());
+                console.Write(openBlocks > 0 ? continuation() : prompt());
 
                 string? line;
-                try { line = Console.ReadLine(); }
+                try { line = console.ReadLine(); }
                 catch (System.IO.IOException) { return 0; }   // stdin went away under us
                 if (line is null) return 0;                   // Ctrl+D / Ctrl+Z / EOF
 
@@ -104,7 +107,7 @@ namespace EasyShell.Interactive
 
                     if (trimmed.StartsWith(':'))
                     {
-                        if (HandleReplCommand(trimmed, options.HelpText, engine))
+                        if (HandleReplCommand(trimmed, options.HelpText, engine, console))
                             return 0;
                         continue;
                     }
@@ -122,7 +125,7 @@ namespace EasyShell.Interactive
                     // Print the last expression's value, so the prompt doubles as a calculator.
                     Value result = engine.RunUnit(unit, origin: "<repl>");
                     if (result.Kind != ValueKind.Null)
-                        Console.WriteLine(result.AsString());
+                        console.WriteLine(result.AsString());
                 }
                 catch (ScriptExitException ex)
                 {
@@ -140,12 +143,12 @@ namespace EasyShell.Interactive
             }
         }
 
-        private static bool HandleReplCommand(string cmd, string? helpText, EasyShellEngine engine)
+        private static bool HandleReplCommand(string cmd, string? helpText, EasyShellEngine engine, Hosting.IShellConsole console)
         {
             switch (cmd.ToLowerInvariant())
             {
                 case ":help":
-                    Console.WriteLine(helpText ?? "No help text was supplied by this host.");
+                    console.WriteLine(helpText ?? "No help text was supplied by this host.");
                     return false;
 
                 case ":exit":
@@ -154,16 +157,16 @@ namespace EasyShell.Interactive
 
                 case ":vars":
                     foreach ((string? name, string? kind, string? value) in engine.DumpVariables())
-                        Console.WriteLine($"{kind} {name} = {value}");
+                        console.WriteLine($"{kind} {name} = {value}");
                     return false;
 
                 case ":funcs":
                     foreach (string fn in engine.DumpFunctions())
-                        Console.WriteLine(fn);
+                        console.WriteLine(fn);
                     return false;
 
                 default:
-                    Console.WriteLine("Unknown REPL command. Try :help");
+                    console.WriteLine("Unknown REPL command. Try :help");
                     return false;
             }
         }

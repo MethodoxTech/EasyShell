@@ -13,6 +13,19 @@ namespace EasyShell
         private readonly Dictionary<string, Variable> _vars =
             new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// The world this runtime executes in - console, filesystem, processes, environment.
+        /// Defaults to the real machine; a virtual machine supplies its own. See
+        /// <see cref="Hosting.ShellHost"/>.
+        /// </summary>
+        public Hosting.ShellHost Host { get; init; } = Hosting.ShellHost.Default;
+
+        /// <summary>
+        /// Arguments passed to the running script, consumed by HASARG/ARG. Per-runtime rather
+        /// than static so multiple embedded sessions cannot see each other's arguments.
+        /// </summary>
+        public string[] ScriptArguments { get; set; } = Array.Empty<string>();
+
         public readonly Dictionary<string, Block> Functions =
             new(StringComparer.OrdinalIgnoreCase);
 

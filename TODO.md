@@ -13,7 +13,7 @@ Potential additions:
 Current:
 
 - [ ] Test with more real-world use cases
-- [ ] Draft build script
+- [x] ~~Draft build script~~ `BuildScripts/BuildEasyShell.easy` builds EasyShell itself, and Parcel NExT's `Pure2/BuildScripts/PublishPure.easy` publishes Pure and Pure Notebook - the first real-world script written against this shell, and the source of the two additions below.
 - [ ] Publish to Itch.io
 - [ ] Create Visual Shell script for publishing whole Steam Divooka explore distribution
 - [ ] Reference/Refactor `EasyShell` directly for Visual Shell use
@@ -25,6 +25,11 @@ Operator/Command:
 - [x] Support instance method as command name: e.g. `System.DateTime.AddDays $myTime 15`.
     * The first argument is the target. Static members still win when one fits; instance members (methods, properties, fields) are tried next. `CALL` still works as before.
 
+Commands:
+
+- [x] `REMOVEALL <folder> <pattern> [recursive]` - deleting by wildcard. A publish script always ends with "and now strip the XML docs out of the output", which `REMOVE` cannot express without knowing every file name in advance.
+- [x] Script arguments: `HASARG <flag>`, `ARG <index>`, `$EasyArgs`, `$EasyArgCount`. A build script needs its flags - `easy Publish.easy --incremental` - and everything after the script path now belongs to the script.
+
 Enhance syntax:
 
 - [ ] Array/List (may utilize built-in C# construct?)
@@ -34,6 +39,7 @@ Enhance syntax:
 Manual testing:
 
 - [ ] Test call method of handles
+- [ ] Run `Examples/ArgumentsAndCleanup.easy`, with and without `--incremental` - covers `HASARG`/`ARG`/`$EasyArgs` and `REMOVEALL` against a scratch folder. It self-checks with `assert`.
 - [ ] Run `Examples/StringsAndInstanceMembers.easy` - covers `||`/`CONCAT`/`APPEND`, `+` as concatenation, instance methods/properties as command names, and `CALL`. It self-checks with `assert`, so a non-zero exit code means something regressed.
 
 Enhancement:

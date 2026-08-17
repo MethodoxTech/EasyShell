@@ -1,0 +1,52 @@
+# Script arguments, and deleting files by pattern.
+# Run with: easy ./Examples/ArgumentsAndCleanup.easy
+#      and: easy ./Examples/ArgumentsAndCleanup.easy --incremental
+#
+# It self-checks with assert, so a non-zero exit code means something regressed.
+
+# --- Script arguments --------------------------------------------------------
+
+# Everything after the script path belongs to the script.
+print (|| "Arguments: '" $EasyArgs "' (" $EasyArgCount ")")
+
+# HASARG is the usual shape: a build script asking whether a flag was passed.
+IF (hasarg "--incremental")
+    print "Incremental build requested."
+ELSE
+    print "Full build (pass --incremental to see the other branch)."
+END
+
+# Matching ignores case, and asking for an argument that is not there is not an error.
+assert (== (hasarg "--no-such-flag") FALSE) "an absent flag must not match"
+assert (== (arg 99) "") "an out-of-range argument reads as empty"
+
+# --- Deleting by pattern -----------------------------------------------------
+
+# A scratch folder to work in, so this example cannot touch anything of yours.
+$Scratch = (JoinPath (System.IO.Path.GetTempPath) "EasyShellCleanupExample")
+remove $Scratch
+mkdir $Scratch
+mkdir (JoinPath $Scratch "nested")
+
+System.IO.File.WriteAllText (JoinPath $Scratch "keep.txt") "kept"
+System.IO.File.WriteAllText (JoinPath $Scratch "notes.xml") "<a/>"
+System.IO.File.WriteAllText (JoinPath $Scratch "nested" "deep.xml") "<b/>"
+
+# REMOVEALL is recursive by default and answers with how many files it deleted.
+$Deleted = (removeall $Scratch "*.xml")
+print (|| "Deleted " $Deleted " XML file(s).")
+assert (== $Deleted 2) "both XML files should have gone, including the nested one"
+assert (EXISTS (JoinPath $Scratch "keep.txt")) "files that do not match are left alone"
+assert (== (EXISTS (JoinPath $Scratch "nested")) TRUE) "directories are never matched"
+
+# Pass FALSE to stay in the top folder.
+System.IO.File.WriteAllText (JoinPath $Scratch "top.log") "x"
+System.IO.File.WriteAllText (JoinPath $Scratch "nested" "deep.log") "y"
+assert (== (removeall $Scratch "*.log" FALSE) 1) "a shallow sweep should not reach the nested file"
+assert (EXISTS (JoinPath $Scratch "nested" "deep.log")) "the nested file should still be there"
+
+# A folder that is not there had nothing to delete, which is not an error.
+assert (== (removeall (JoinPath $Scratch "no-such-folder") "*.xml") 0) "a missing folder deletes nothing"
+
+remove $Scratch
+print "All checks passed."

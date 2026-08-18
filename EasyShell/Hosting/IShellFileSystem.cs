@@ -18,6 +18,17 @@ namespace EasyShell.Hosting
     public interface IShellFileSystem
     {
         // ------------------------------------------------------------------ path arithmetic
+
+        /// <summary>
+        /// Fold a caller-supplied path into this filesystem's separator convention. The default
+        /// host maps both '/' and '\' onto the real platform separator, so a script written with
+        /// Windows separators works on Linux and vice-versa. A virtual filesystem with its OWN
+        /// separator ('/' always) returns the path unchanged - the whole point of a portable
+        /// image is that host conventions never touch its paths, so this must NOT rewrite '/' to
+        /// '\' just because the code happens to be running on Windows.
+        /// </summary>
+        string NormalizeSeparators(string path);
+
         string GetFullPath(string path);
         string Combine(string a, string b);
         string? GetDirectoryName(string path);

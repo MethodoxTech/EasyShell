@@ -214,7 +214,7 @@ namespace EasyShell
                     string method = EvaluateArg(rt, args[2]).AsString();
                     List<Value> callArgs = EvalArgs(rt, args.Skip(3));
 
-                    return InvokeOnHandle(handle, method, callArgs, line);
+                    return InvokeOnHandle(rt, handle, method, callArgs, line);
                 }
 
                 throw new EasyShellException($"{line}: CALL syntax: CALL <funcName> OR CALL <handle> <method> [args]");
@@ -592,8 +592,22 @@ namespace EasyShell
         /// <summary>
         /// Same, for `CALL &lt;handle&gt; &lt;method&gt; [args]`.
         /// </summary>
-        private static Value InvokeOnHandle(object handle, string method, List<Value> args, int line)
+        private static Value InvokeOnHandle(Runtime rt, object handle, string method, List<Value> args, int line)
         {
+            // Instance reflection is the same escape hatch as qualified reflection and MUST go
+            // through the same policy - otherwise `CALL "" GetType` walks String -> Type ->
+            // Assembly -> GetType("System.IO.File") -> Invoke and reaches arbitrary host members
+            // that `System.IO.File.WriteAllText ...` (which routes through InvokeQualified) would
+            // have refused. The gate name is the CONCRETE receiver type plus the member, so a
+            // policy that allows only pure namespaces stops the pivot at its first hop: the
+            // returned Type is a System.RuntimeType, and no further CALL on it is permitted.
+            if (rt.Host.CanInvokeQualified is { } permits)
+            {
+                string qualified = $"{handle.GetType().FullName}.{method}";
+                if (!permits(qualified))
+                    throw new EasyShellException($"{line}: '{qualified}' is not permitted in this environment.");
+            }
+
             try
             {
                 return ReflectionInvoker.InvokeInstance(handle, method, args);

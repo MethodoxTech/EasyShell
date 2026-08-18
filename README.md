@@ -544,6 +544,16 @@ Then creates a package in:
     refuse or allowlist fully-qualified names, and refusals read as ordinary script errors
   * Script arguments (`HASARG`/`ARG`) are per-Runtime, so embedded sessions cannot see each
     other's flags
+  * **Both** reflection paths are gated. `CALL <receiver> <member>` reached
+    `ReflectionInvoker.InvokeInstance` without consulting the policy, so `CALL "" GetType`
+    walked String -> Type -> Assembly -> `GetType("System.IO.File")` -> `Invoke` and escaped a
+    sandbox that correctly refused the same call written as `System.IO.File.WriteAllText ...`.
+    Instance calls are now gated on the concrete receiver type plus member name
+  * Separator normalization moved onto `IShellFileSystem.NormalizeSeparators`. The file
+    built-ins folded '/' onto `Path.DirectorySeparatorChar`, which is right for the real machine
+    and wrong for a virtual filesystem with its own convention: on Windows a pocket path
+    `/home/x` became `\home\x` and silently matched nothing. The default host keeps the old
+    behavior; a virtual host returns the path unchanged
 
 ## License
 

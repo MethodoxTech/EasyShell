@@ -16,6 +16,7 @@ namespace EasyShell.Hosting
     /// <summary>System.IO, verbatim - including the retrying deletes scripts rely on.</summary>
     public sealed class HostFileSystem : IShellFileSystem
     {
+        public string NormalizeSeparators(string path) => Commands.CommonUtilities.NormalizeSeparators(path);
         public string GetFullPath(string path) => Path.GetFullPath(path);
         public string Combine(string a, string b) => Path.Combine(a, b);
         public string? GetDirectoryName(string path) => Path.GetDirectoryName(path);

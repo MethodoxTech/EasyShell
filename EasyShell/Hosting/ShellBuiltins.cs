@@ -16,7 +16,7 @@ namespace EasyShell.Hosting
     internal static class ShellBuiltins
     {
         private static string Expand(ShellHost host, string path)
-            => Commands.CommonUtilities.NormalizeSeparators(host.Environment.ExpandVariables(path));
+            => host.FileSystem.NormalizeSeparators(host.Environment.ExpandVariables(path));
 
         public static bool Exists(ShellHost host, string path)
         {

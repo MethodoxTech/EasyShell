@@ -36,6 +36,8 @@ namespace EasyShell.Tests
                 return "/" + string.Join('/', parts);
             }
 
+            // '/'-separated world: host separators never leak in, so this is identity.
+            public string NormalizeSeparators(string path) => path;
             public string GetFullPath(string path) => Resolve(path);
             public string Combine(string a, string b) => a.TrimEnd('/') + "/" + b.TrimStart('/');
             public string? GetDirectoryName(string path)
@@ -319,6 +321,49 @@ namespace EasyShell.Tests
 
             Assert.Throws<Exceptions.EasyShellException>(
                 () => Run(rt, """System.IO.File.ReadAllText "/etc/passwd" """));
+        }
+
+        [Fact]
+        public void ReflectionPolicyGatesTheCallHandlePathToo()
+        {
+            // The escape the CALL path used to leave open: instance reflection on any value
+            // reaches System.Object.GetType and from there walks Type -> Assembly -> arbitrary
+            // members, defeating a policy that only guards the fully-qualified form. Both paths
+            // must go through the same gate.
+            var (rt, _, _, _, _) = CreateWorld(
+                reflectionPolicy: name => name.StartsWith("System.Math.", StringComparison.Ordinal));
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(
+                () => Run(rt, """CALL "" GetType"""));
+            Assert.Contains("not permitted", ex.Message);
+        }
+
+        [Fact]
+        public void ReflectionPolicyStillAllowsPermittedInstanceCalls()
+        {
+            // The gate is by concrete type + member, so a policy that allows System.String.*
+            // still lets `CALL $s ToUpper` through - the seam narrows, it does not slam shut.
+            var (rt, _, console, _, _) = CreateWorld(
+                reflectionPolicy: name => name.StartsWith("System.String.", StringComparison.Ordinal));
+
+            Run(rt, """
+                STRINGVAR S "hello"
+                print (CALL $S ToUpper)
+                """);
+            Assert.Equal("HELLO", console.Output[^1]);
+        }
+
+        [Fact]
+        public void NormalizeSeparatorsIsAHostDecision()
+        {
+            // The virtual filesystem keeps its own '/' convention; the file built-ins must not
+            // rewrite it to a host separator. (On the default host, they still fold '\' <-> '/'.)
+            var (rt, fs, _, _, _) = CreateWorld();
+            fs.CreateDirectory("/a/b");
+            fs.WriteAllText("/a/b/c.txt", "x");
+
+            Run(rt, """rm "/a/b/c.txt" """);
+            Assert.False(fs.Files.ContainsKey("/a/b/c.txt"));   // the '/'-path resolved, unmangled
         }
 
         [Fact]

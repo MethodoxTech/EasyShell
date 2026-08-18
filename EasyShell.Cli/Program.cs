@@ -23,6 +23,10 @@ namespace EasyShell
             REPL:
               - Type commands line by line.
               - Multi-line blocks (IF/WHILE/FUNC) are entered until END.
+              - Arrows move the cursor; Up/Down walk the history.
+              - Tab completes built-in commands, $variables, programs on PATH, and files and
+                folders around the working directory. A folder keeps its trailing separator so
+                the next Tab descends into it.
               - REPL commands:
                   :help  :vars  :funcs  :exit   # Exits the REPL
 
@@ -43,6 +47,11 @@ namespace EasyShell
 
             Variable assignment:
               $Name = ValueOrExpression
+
+            Compound assignment:
+              $Name += Value      # and -= *= /= %= ^=
+              += $Name Value      # the head-first spelling means the same thing
+                Both are shorthand for $Name = (+ $Name Value), so the variable must exist.
 
             Expressions (sub-commands):
               Parenthesized command that evaluates to a value:
@@ -91,7 +100,9 @@ namespace EasyShell
             Built-in arithmetic commands:
               +  -  *  /  %  ^
                 Head-first, any number of operands: (+ 1 2 3)
-                '+' concatenates instead when an operand is not a number.
+                '+' concatenates instead when an operand is not a number; every other
+                operator reports one rather than treating it as 0. Text that parses as a
+                number still counts as one.
 
             Built-in string commands:
               ||  CONCAT  APPEND

@@ -36,6 +36,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * `WHILE ... END`
   * `FUNC name ... END` and `CALL name`
 * **Arithmetic** with `+`, `-`, `*`, `/`, `%`, `^` - head first, any number of operands
+* **Compound assignment** with `+=`, `-=`, `*=`, `/=`, `%=`, `^=`, in either spelling
 * **String concatenation** with `||` (or `CONCAT`/`APPEND`), any number of arguments
 * **Reflection-based .NET invocation**
   * Static: `System.IO.File.WriteAllText "path" "content"`
@@ -43,6 +44,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * Instance on a handle: `CALL $handle MethodName [args...]`
 * **External process execution** for non-keyword, non-qualified commands, captured in scripts
   and run in the foreground at an interactive prompt
+* **A line-editing prompt** with history, cursor motion and Tab completion
 * **Script arguments** via `HASARG` / `ARG` and `$EasyArgs`
 * **File system commands** including `REMOVEALL` for deleting by wildcard
 * **Comments** with `#`
@@ -109,6 +111,27 @@ easy # REPL
 easy path/to/script.easy
 ```
 
+### The REPL
+
+`easy` with no arguments (or `easy --repl`) is a line-editing prompt: arrow keys move the cursor,
+Up and Down walk the history, and **Tab completes**. One pool of candidates is offered for every
+word, with no special case for the first one - a program name can come out of a variable and `RUN`
+takes one as an argument, so a grammar-shaped guess would be wrong as often as it was right:
+
+| Typed | Offered |
+| --- | --- |
+| `pri` | built-in commands and block keywords: `print` |
+| `$Easy` | variables bound in this session: `$EasyArgs`, `$EasyScriptRoot`, ... |
+| `dotn` | programs on PATH: `dotnet` (on Windows, without the PATHEXT suffix) |
+| `Scri` | files and folders around the working directory: `Scripts/` |
+
+A folder keeps its trailing separator so the next Tab descends into it. A word that already
+contains a separator is a path and nothing else - `bin/pri` will not offer `print`. An empty word
+lists the working directory rather than several thousand commands.
+
+Piped input (`echo 'print hi' | easy --repl`) keeps reading whole lines, because keys cannot be
+read from a pipe.
+
 ### Help / Version
 
 ```bash
@@ -161,6 +184,23 @@ Values can be literals or expressions:
 
 ```easy
 $Title = (System.String.Format "Count={0}" $Count)
+```
+
+Compound assignment - `+=`, `-=`, `*=`, `/=`, `%=`, `^=` - abbreviates reading a variable,
+applying an operator and writing it back. Both spellings mean the same thing, because the language
+has two shapes and each is the obvious guess from one of them:
+
+```easy
+$Count -= 1        # infix, like the assignment above
+-= $Count 1        # head first, like every other operator
+```
+
+Either is exactly `$Count = (- $Count 1)`, so the variable has to exist already, integer
+arithmetic stays integer, and `+=` concatenates as soon as an operand is not a number:
+
+```easy
+$Tag = "build"
+$Tag += "-42"      # build-42
 ```
 
 ### Literals
@@ -220,6 +260,16 @@ $Pow = (^ 2 10)       # 1024
 
 The result stays an `INT` when every operand is an `INT` and the operator cannot produce a
 fraction (`+`, `-`, `*`, `%`); otherwise it is a `DOUBLE`.
+
+An operand that is not a number is an error rather than a zero:
+
+```easy
+$n = (- 10 "ten")  # (Error) 1: - expects numbers; 'ten' is not one.
+```
+
+Text that parses as a number still counts as one, so a count read out of a file or an environment
+variable is fine. `+` is the deliberate exception: it concatenates instead, which is what `+=`
+above relies on. Use `||` when joining text is what you always mean.
 
 ### Built-in String Commands
 
@@ -554,6 +604,24 @@ Then creates a package in:
     and wrong for a virtual filesystem with its own convention: on Windows a pocket path
     `/home/x` became `\home\x` and silently matched nothing. The default host keeps the old
     behavior; a virtual host returns the path unchanged
+  * **Tab completion at the `easy` prompt.** The line editor and its completion plumbing already
+    existed, and were used only by PocketOS - the CLI never implemented `IShellLineInput`, so the
+    REPL read whole lines and Tab reached the line discipline and inserted a tab character.
+    `HostConsole` now delivers keys, and `ShellCompletionSource` offers built-in commands, the
+    session's variables, programs on PATH, and files and folders around the working directory.
+    `IShellLineInput.IsInteractive` keeps a piped session on the whole-line path
+  * **Compound assignment**: `$a -= 1` and `-= $a 1`, for every arithmetic operator. `-=` was not
+    a token, so `-= $a 1` ran as `-` applied to `=`, `$a` and `1` - a statement that computed a
+    number, discarded it, and left `$a` alone, which made a countdown loop run forever in silence
+  * **Arithmetic refuses a non-numeric operand** instead of coercing it to 0, so a typo or an
+    unset variable is reported rather than quietly contributing a zero. `+` still concatenates
+  * **cmd.exe `/c` quoting.** A `.bat`/`.cmd` invoked with an argument containing a space failed
+    on Windows whenever the script's own path also contained one - cmd preserves quotes only when
+    there are exactly two on the line and otherwise strips the outermost pair, so the command line
+    came apart and the caller saw "exited with code 1" with no output. The line is now built
+    explicitly under `/S`
+  * The "takes a single value" diagnostic no longer suggests re-wrapping an expression that is
+    already parenthesized; it names the leftover words instead, and calls out a trailing `:`
 
 ## License
 

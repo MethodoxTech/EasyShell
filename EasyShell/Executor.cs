@@ -738,16 +738,16 @@ namespace EasyShell
         /// Whether a value can take part in arithmetic. Strings count when they parse as a number,
         /// which is how "10" has always behaved in (+ "10" 1).
         /// </summary>
+        private static bool IsNumeric(Value v) =>
+            v.Kind is ValueKind.Int or ValueKind.Double or ValueKind.Bool ||
+            (v.Kind == ValueKind.String &&
+             double.TryParse(v.AsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out _));
         /// <summary>An operand as a diagnostic should show it: quoted, or named when it has no text at all.</summary>
         private static string Describe(Value v)
         {
             string text = v.Kind == ValueKind.Null ? string.Empty : v.AsString();
             return string.IsNullOrEmpty(text) ? "an empty value" : $"'{text}'";
         }
-        private static bool IsNumeric(Value v) =>
-            v.Kind is ValueKind.Int or ValueKind.Double or ValueKind.Bool ||
-            (v.Kind == ValueKind.String &&
-             double.TryParse(v.AsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out _));
         private static bool Compare(string op, Value a, Value b)
         {
             // Prefer numeric if both look numeric-ish

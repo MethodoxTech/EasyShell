@@ -300,6 +300,16 @@ namespace EasyShell
                 if (cmdName == "+" && !vs.All(IsNumeric))
                     return Concat(vs);
 
+                // Every remaining operator is arithmetic and nothing else, so an operand that is
+                // not a number is a mistake and gets said out loud. Coercing it to 0 instead is
+                // how `-= $a 1` used to look like it worked before `-=` was a token: the stray
+                // '=' became 0 and the subtraction went ahead. A shell that quietly invents an
+                // operand computes the wrong answer without ever admitting to it.
+                foreach (Value operand in vs)
+                    if (!IsNumeric(operand))
+                        throw new EasyShellException(
+                            $"{line}: {cmdName} expects numbers; {Describe(operand)} is not one.");
+
                 // unary minus: (- 5)
                 if (cmdName == "-" && vs.Count == 1)
                     return new Value(ValueKind.Double, -vs[0].AsDouble());
@@ -728,6 +738,12 @@ namespace EasyShell
         /// Whether a value can take part in arithmetic. Strings count when they parse as a number,
         /// which is how "10" has always behaved in (+ "10" 1).
         /// </summary>
+        /// <summary>An operand as a diagnostic should show it: quoted, or named when it has no text at all.</summary>
+        private static string Describe(Value v)
+        {
+            string text = v.Kind == ValueKind.Null ? string.Empty : v.AsString();
+            return string.IsNullOrEmpty(text) ? "an empty value" : $"'{text}'";
+        }
         private static bool IsNumeric(Value v) =>
             v.Kind is ValueKind.Int or ValueKind.Double or ValueKind.Bool ||
             (v.Kind == ValueKind.String &&

@@ -17,8 +17,13 @@ namespace EasyShell
         /// The world this runtime executes in - console, filesystem, processes, environment.
         /// Defaults to the real machine; a virtual machine supplies its own. See
         /// <see cref="Hosting.ShellHost"/>.
+        ///
+        /// <para>Settable because a pipeline stage temporarily swaps in a capturing console
+        /// (<see cref="Hosting.ShellHost.WithConsole"/>) and restores the original afterwards.
+        /// Execution is single-threaded per runtime, so the swap is never observable from
+        /// outside the stage that made it.</para>
         /// </summary>
-        public Hosting.ShellHost Host { get; init; } = Hosting.ShellHost.Default;
+        public Hosting.ShellHost Host { get; set; } = Hosting.ShellHost.Default;
 
         /// <summary>
         /// Arguments passed to the running script, consumed by HASARG/ARG. Per-runtime rather

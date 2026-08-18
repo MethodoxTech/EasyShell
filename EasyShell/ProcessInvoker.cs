@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -152,6 +153,82 @@ namespace EasyShell
                 lock (stderr)
                     return new ProcessResult(p.ExitCode, stdout.ToString(), stderr.ToString());
         }
+        /// <summary>
+        /// Run a program with its standard input supplied as text - one stage of a pipeline.
+        ///
+        /// The difference from <see cref="RunStreaming"/> is the one that matters for a pipe:
+        /// stdin is written and then closed, rather than closed immediately. Writing happens on a
+        /// background task because a child that never drains its input (`head -n 1` on a large
+        /// feed) would otherwise fill the pipe buffer and deadlock the writer against a reader
+        /// that has already stopped reading - and a broken pipe there is normal, not an error.
+        /// </summary>
+        public static ProcessResult RunPiped(string exe, List<string> args, string? standardInput, TimeSpan? timeout = null)
+        {
+            ProcessStartInfo psi = new()
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                CreateNoWindow = true
+            };
+            SetProgram(psi, exe, args);
+
+            StringBuilder stdout = new();
+            StringBuilder stderr = new();
+            TaskCompletionSource outDone = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource errDone = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using Process p = new() { StartInfo = psi, EnableRaisingEvents = true };
+
+            p.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is null) { outDone.TrySetResult(); return; }
+                lock (stdout) stdout.AppendLine(e.Data);
+            };
+            p.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is null) { errDone.TrySetResult(); return; }
+                lock (stderr) stderr.AppendLine(e.Data);
+            };
+
+            if (!p.Start())
+                throw new InvalidOperationException($"Failed to start process: {exe}");
+
+            Task feeding = Task.Run(() =>
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(standardInput))
+                        p.StandardInput.Write(standardInput);
+                }
+                catch (IOException) { /* the child stopped reading: SIGPIPE, and that is fine */ }
+                finally
+                {
+                    try { p.StandardInput.Close(); } catch { }
+                }
+            });
+
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+
+            if (!WaitForProcessExit(p, timeout))
+            {
+                TryKillTree(p);
+                throw new TimeoutException($"Process did not finish within {timeout!.Value.TotalSeconds:0} seconds and was terminated: {exe}");
+            }
+
+            Task.WaitAll([outDone.Task, errDone.Task], StreamDrainGrace);
+            feeding.Wait(StreamDrainGrace);
+
+            try { p.CancelOutputRead(); } catch { }
+            try { p.CancelErrorRead(); } catch { }
+
+            lock (stdout)
+                lock (stderr)
+                    return new ProcessResult(p.ExitCode, stdout.ToString(), stderr.ToString());
+        }
+
         /// <summary>
         /// Run a program as a foreground job: no redirection at all, so the child inherits this
         /// process's stdin, stdout and stderr and is talking to whatever terminal we are.

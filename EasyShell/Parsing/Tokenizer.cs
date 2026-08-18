@@ -37,6 +37,7 @@ namespace EasyShell.Parsing
                     ('!', '=') => "!=",
                     ('>', '=') => ">=",
                     ('<', '=') => "<=",
+                    ('>', '>') => ">>",   // append redirection
                     _ => ""
                 };
                 return op.Length != 0;
@@ -100,6 +101,21 @@ namespace EasyShell.Parsing
                 {
                     FlushWord();
                     tokens.Add(new Token(TokKind.RParen, ")", false));
+                    continue;
+                }
+
+                // '|' is the pipe operator, but '||' is the string-concatenation COMMAND and must
+                // stay one word - the same "longest match first" care the two-char operators get.
+                if (c == '|')
+                {
+                    if (i + 1 < line.Length && line[i + 1] == '|')
+                    {
+                        sb.Append("||");
+                        i++;
+                        continue;
+                    }
+                    FlushWord();
+                    tokens.Add(new Token(TokKind.Symbol, "|", false));
                     continue;
                 }
 

@@ -152,6 +152,13 @@ namespace EasyShell.Tests
                 onLine?.Invoke("captured-output");
                 return new ProcessInvoker.ProcessResult(0, "captured-output\n", "");
             }
+
+            /// <summary>Echoes its stdin back with the program name, so a pipeline's wiring is visible.</summary>
+            public ProcessInvoker.ProcessResult RunPiped(string program, List<string> arguments, string? standardInput, TimeSpan? timeout)
+            {
+                Invocations.Add($"pipe:{program} {string.Join(' ', arguments)}".TrimEnd());
+                return new ProcessInvoker.ProcessResult(0, $"[{program}]{standardInput ?? ""}", "");
+            }
         }
 
         private static (Runtime Runtime, FakeFileSystem Fs, FakeConsole Console, FakeEnvironment Env, FakeProcessRunner Procs)
@@ -298,6 +305,123 @@ namespace EasyShell.Tests
             Run(rt, "vim.tiny notes.txt");
 
             Assert.Equal("cap:vim.tiny notes.txt", Assert.Single(procs.Invocations));
+        }
+
+        // ------------------------------------------------------------------ pipes and redirection
+
+        [Fact]
+        public void PipeChainsProgramsStdoutToStdin()
+        {
+            var (rt, _, _, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("ls");
+            procs.KnownPrograms.Add("wc");
+
+            Run(rt, "ls | wc");
+
+            // The fake echoes "[name]" + whatever it was fed, so the chain is visible end to end.
+            Assert.Equal(["pipe:ls", "pipe:wc"], procs.Invocations);
+        }
+
+        [Fact]
+        public void PipelineValueIsAvailableInExpressionContext()
+        {
+            var (rt, _, console, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("ls");
+            procs.KnownPrograms.Add("wc");
+
+            Run(rt, """
+                $n = (ls | wc)
+                print $n
+                """);
+
+            Assert.Equal("[wc][ls]", console.Output[^1]);
+        }
+
+        [Fact]
+        public void RedirectionWritesBuiltinOutputToAFile()
+        {
+            var (rt, fs, console, _, _) = CreateWorld();
+
+            Run(rt, "print hello > /out.txt");
+
+            Assert.Equal("hello\n", fs.Files["/out.txt"]);
+            Assert.Empty(console.Output);   // it went to the file, not the screen
+        }
+
+        [Fact]
+        public void AppendRedirectionKeepsWhatWasThere()
+        {
+            var (rt, fs, _, _, _) = CreateWorld();
+
+            Run(rt, """
+                print one > /log.txt
+                print two >> /log.txt
+                """);
+
+            Assert.Equal("one\ntwo\n", fs.Files["/log.txt"]);
+        }
+
+        [Fact]
+        public void InputRedirectionFeedsTheFirstStage()
+        {
+            var (rt, fs, _, _, procs) = CreateWorld();
+            fs.Files["/in.txt"] = "seed";
+            procs.KnownPrograms.Add("cat");
+
+            Run(rt, """
+                $x = (cat < /in.txt)
+                print $x
+                """);
+
+            Assert.Equal("[cat]seed", rt.GetVar("x").Value.AsString());
+        }
+
+        [Fact]
+        public void OperatorsInHeadPositionKeepTheirMeaning()
+        {
+            // The whole disambiguation rule: `>` and `||` are ordinary commands when they are the
+            // head of an argument list. If pipeline parsing ever swallows these, comparisons and
+            // concatenation break language-wide.
+            var (rt, _, console, _, _) = CreateWorld();
+
+            Run(rt, """
+                print (> 5 3)
+                print (|| "a" "b")
+                """);
+
+            Assert.Equal("TRUE", console.Output[0]);
+            Assert.Equal("ab", console.Output[1]);
+        }
+
+        [Fact]
+        public void QuotedOperatorsAreOrdinaryArguments()
+        {
+            var (rt, _, console, _, _) = CreateWorld();
+
+            Run(rt, """print ">"  """);
+
+            Assert.Equal(">", console.Output[^1]);
+        }
+
+        [Fact]
+        public void RedirectionWithoutATargetIsAScriptError()
+        {
+            var (rt, _, _, _, _) = CreateWorld();
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(() => Run(rt, "print hello >"));
+            Assert.Contains("needs a file name", ex.Message);
+        }
+
+        [Fact]
+        public void MisplacedRedirectionInAPipelineExplainsItself()
+        {
+            var (rt, _, _, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("ls");
+            procs.KnownPrograms.Add("wc");
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(
+                () => Run(rt, "ls > /a.txt | wc"));
+            Assert.Contains("last command", ex.Message);
         }
 
         [Fact]

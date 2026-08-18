@@ -152,6 +152,13 @@ namespace EasyShell
             if (args.Count == 0)
                 return Value.Null;
 
+            // Pipes and redirection are recognized here, in the one funnel both statements and
+            // parenthesized expressions pass through, so `ls | wc -l` reads the same as a
+            // statement and as `$n = (ls | wc -l)`. See Pipelines for the head-position rule
+            // that keeps `(> $a $b)` a comparison.
+            if (Pipelines.Uses(args))
+                return Pipelines.Execute(rt, args, line, statementContext);
+
             // Command name must be an AtomArg or VarRefArg resolving to string.
             Value cmdNameVal = EvaluateArg(rt, args[0]);
             string cmdName = cmdNameVal.AsString();
@@ -459,7 +466,7 @@ namespace EasyShell
         }
 
         /// <summary>Record the exit code so scripts can inspect it, then abort unless told not to.</summary>
-        private static void CheckExitCode(Runtime rt, string program, int exitCode, int line)
+        internal static void CheckExitCode(Runtime rt, string program, int exitCode, int line)
         {
             SetLastExitCode(rt, exitCode);
 
@@ -658,7 +665,7 @@ namespace EasyShell
         /// <summary>Whether this runtime is attached to a person at a terminal. See <see cref="InteractiveVariable"/>.</summary>
         public static bool IsInteractive(Runtime rt)
             => rt.TryGetVar(InteractiveVariable, out Variable? v) && v.Value.AsBool();
-        private static TimeSpan? GetProcessTimeout(Runtime rt)
+        internal static TimeSpan? GetProcessTimeout(Runtime rt)
         {
             if (!rt.TryGetVar(ProcessTimeoutVariable, out Variable? v))
                 return null;

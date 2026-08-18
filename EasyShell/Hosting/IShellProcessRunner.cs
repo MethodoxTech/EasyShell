@@ -23,5 +23,13 @@ namespace EasyShell.Hosting
 
         /// <summary>Run captured through pipes; stdout lines stream to <paramref name="onLine"/> when given.</summary>
         ProcessInvoker.ProcessResult RunCaptured(string program, List<string> arguments, Action<string>? onLine, TimeSpan? timeout);
+
+        /// <summary>
+        /// Run captured with standard input supplied as text - one stage of a pipeline. Separate
+        /// from <see cref="RunCaptured"/> because feeding stdin is the whole difference between
+        /// running a program and piping into one, and a host that virtualizes processes wires it
+        /// to a virtual pipe rather than a real one.
+        /// </summary>
+        ProcessInvoker.ProcessResult RunPiped(string program, List<string> arguments, string? standardInput, TimeSpan? timeout);
     }
 }

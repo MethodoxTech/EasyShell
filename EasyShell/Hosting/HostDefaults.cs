@@ -64,6 +64,9 @@ namespace EasyShell.Hosting
 
         public ProcessInvoker.ProcessResult RunCaptured(string program, List<string> arguments, Action<string>? onLine, TimeSpan? timeout) =>
             ProcessInvoker.RunStreaming(program, arguments, onLine, timeout);
+
+        public ProcessInvoker.ProcessResult RunPiped(string program, List<string> arguments, string? standardInput, TimeSpan? timeout) =>
+            ProcessInvoker.RunPiped(program, arguments, standardInput, timeout);
     }
 
     /// <summary>Process-global cwd and environment, verbatim - one `easy` process, one world.</summary>

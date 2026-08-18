@@ -49,6 +49,13 @@ namespace EasyShell.Interactive
         /// REPL is by definition a person at a terminal.
         /// </summary>
         public bool Interactive { get; init; } = true;
+
+        /// <summary>
+        /// What Tab offers. Used only when the host's console also implements
+        /// <see cref="IShellLineInput"/>; without that there is no way to see a Tab key at all,
+        /// and the REPL reads whole lines as before.
+        /// </summary>
+        public ICompletionSource? Completions { get; init; }
     }
 
     /// <summary>
@@ -79,15 +86,32 @@ namespace EasyShell.Interactive
 
             options.Banner?.Invoke();
 
+            // Line editing (and therefore Tab completion) needs keys, not lines. A host that can
+            // supply them gets the editor; every other host keeps the ReadLine path unchanged.
+            LineEditor? editor = console is IShellLineInput keys
+                ? new LineEditor(console, keys, options.Completions)
+                : null;
+
             StringBuilder buffer = new();
             int openBlocks = 0;
 
             while (true)
             {
-                console.Write(openBlocks > 0 ? continuation() : prompt());
+                string currentPrompt = openBlocks > 0 ? continuation() : prompt();
 
                 string? line;
-                try { line = console.ReadLine(); }
+                try
+                {
+                    if (editor is not null)
+                    {
+                        line = editor.ReadLine(currentPrompt);
+                    }
+                    else
+                    {
+                        console.Write(currentPrompt);
+                        line = console.ReadLine();
+                    }
+                }
                 catch (System.IO.IOException) { return 0; }   // stdin went away under us
                 if (line is null) return 0;                   // Ctrl+D / Ctrl+Z / EOF
 

@@ -33,6 +33,20 @@ namespace EasyShell.Hosting
         /// </summary>
         public Func<string, bool>? CanInvokeQualified { get; init; }
 
+        /// <summary>
+        /// The same world with a different console - how a pipeline stage or a redirection
+        /// captures what a built-in writes, without every built-in having to know it is being
+        /// captured.
+        /// </summary>
+        public ShellHost WithConsole(IShellConsole console) => new()
+        {
+            Console = console,
+            FileSystem = FileSystem,
+            Processes = Processes,
+            Environment = Environment,
+            CanInvokeQualified = CanInvokeQualified,
+        };
+
         /// <summary>The historical behavior: real console, real filesystem, real processes.</summary>
         public static ShellHost Default { get; } = new()
         {

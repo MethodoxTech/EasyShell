@@ -164,7 +164,15 @@ namespace EasyShell
             {
                 Runtime rt = GetPresetRuntime(Directory.GetCurrentDirectory(), []);
                 Console.WriteLine($"Easy Shell {Version}  (:help for help)");
-                return EasyShellRepl.Run(new ReplOptions { Runtime = rt, HelpText = HelpText });
+                return EasyShellRepl.Run(new ReplOptions
+                {
+                    Runtime = rt,
+                    HelpText = HelpText,
+                    // The prompt is a person at a terminal, so it gets the line editor and Tab.
+                    // Both halves are needed: the editor only appears because HostConsole can
+                    // deliver keys, and Tab only offers anything because of this.
+                    Completions = new ShellCompletionSource(rt),
+                });
             }
 
             // Process shell script

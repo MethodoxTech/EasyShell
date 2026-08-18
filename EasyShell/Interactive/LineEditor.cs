@@ -30,6 +30,15 @@ namespace EasyShell.Interactive
         EditorKeyPress? ReadKey();
 
         /// <summary>
+        /// Whether keys can actually be delivered right now. A host whose console IS a terminal -
+        /// a virtual tty - is always able to; the process console is not, whenever its input or
+        /// output has been redirected, and the REPL must fall back to whole lines there or a piped
+        /// session would read nothing at all. Defaults to true so a host that only ever runs on a
+        /// terminal need not answer it.
+        /// </summary>
+        bool IsInteractive => true;
+
+        /// <summary>
         /// Turn character-at-a-time delivery on and off. A host with a canonical line discipline
         /// (an OS terminal, a virtual tty) must switch to raw mode here and restore afterwards -
         /// otherwise the editor never sees Tab, because the line discipline is still buffering.
@@ -154,6 +163,9 @@ namespace EasyShell.Interactive
                             break;
 
                         case EditorKey.Character:
+                            // A host reports a key it has no mapping for as a Character carrying
+                            // no character; inserting that would leave a NUL in the line.
+                            if (key.Character == '\0') break;
                             buffer.Insert(caret, key.Character);
                             caret++;
                             // Appending at the end is the common case and needs no repaint of
@@ -187,7 +199,7 @@ namespace EasyShell.Interactive
                 // A single directory keeps the trailing '/' its source supplied, so the next
                 // Tab descends instead of stopping at the directory name.
                 common = candidates[0];
-                if (!common.EndsWith('/')) common += " ";
+                if (!EndsWithSeparator(common)) common += " ";
             }
 
             if (common.Length > word.Length)
@@ -207,7 +219,18 @@ namespace EasyShell.Interactive
             return caret;
         }
 
-        /// <summary>Where the word under the caret begins. Quotes are respected so paths with spaces complete.</summary>
+        /// <summary>
+        /// A candidate that already ends in a directory separator is a folder, and must not have a
+        /// space appended - the next Tab has to be able to descend into it. Both separators count,
+        /// because Windows accepts either and a completion source echoes back the one that was typed.
+        /// </summary>
+        private static bool EndsWithSeparator(string value)
+            => value.EndsWith('/') || value.EndsWith('\\');
+
+        /// <summary>
+        /// Where the word under the caret begins: the last run of non-whitespace before it. Quoting
+        /// is NOT understood, so a path with a space in it completes only from its last space on.
+        /// </summary>
         public static int WordStart(string line, int caret)
         {
             int i = caret;

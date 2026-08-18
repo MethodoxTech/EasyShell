@@ -77,7 +77,9 @@ namespace EasyShell.Interactive
 
             // Line editing (and therefore Tab completion) needs keys, not lines.
             // A host that can supply them gets the editor; every other host keeps the ReadLine path unchanged.
-            LineEditor? editor = console is IShellLineInput keys
+            // IsInteractive is the second half of that question: the process console implements this
+            // interface but cannot honour it once stdin is a pipe, and a piped session must still read.
+            LineEditor? editor = console is IShellLineInput keys && keys.IsInteractive
                 ? new LineEditor(console, keys, options.Completions)
                 : null;
 

@@ -38,6 +38,15 @@ namespace EasyShell.Parsing
                     ('>', '=') => ">=",
                     ('<', '=') => "<=",
                     ('>', '>') => ">>",   // append redirection
+                    // Compound assignment. Without these, `-= $a 1` tokenized as '-' followed by
+                    // '=' and ran as the arithmetic command '-' over the operands '=', $a and 1:
+                    // a statement that computed a number, discarded it, and left $a untouched.
+                    ('+', '=') => "+=",
+                    ('-', '=') => "-=",
+                    ('*', '=') => "*=",
+                    ('/', '=') => "/=",
+                    ('%', '=') => "%=",
+                    ('^', '=') => "^=",
                     _ => ""
                 };
                 return op.Length != 0;

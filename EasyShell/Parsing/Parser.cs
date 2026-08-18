@@ -73,6 +73,13 @@ namespace EasyShell.Parsing
                     continue;
                 }
 
+                // Compound assignment: $NAME op= <value...>, and the head-first spelling of it
+                if (TryParseCompoundAssignment(lineNo, tokens, out Statement? compound))
+                {
+                    stmts.Add(compound);
+                    continue;
+                }
+
                 // IF
                 if (head.Equals("IF", StringComparison.OrdinalIgnoreCase))
                 {
@@ -170,6 +177,66 @@ namespace EasyShell.Parsing
             }
 
             return new Block(stmts);
+        }
+        #endregion
+
+        #region Compound assignment
+        /// <summary>Each compound assignment and the operator command it abbreviates.</summary>
+        private static readonly Dictionary<string, string> CompoundAssignments = new(StringComparer.Ordinal)
+        {
+            ["+="] = "+",
+            ["-="] = "-",
+            ["*="] = "*",
+            ["/="] = "/",
+            ["%="] = "%",
+            ["^="] = "^",
+        };
+
+        /// <summary>
+        /// <c>$Count -= 1</c> and <c>-= $Count 1</c>, both shorthand for <c>$Count = (- $Count 1)</c>.
+        ///
+        /// <para>Two spellings because the language has two shapes and each is the obvious guess
+        /// from one of them: assignment is infix (<c>$Name = Value</c>) while every operator is
+        /// head-first (<c>(- $a 1)</c>). Accepting only one would leave the other a silent
+        /// mistake, which is precisely the failure these were added to remove.</para>
+        ///
+        /// <para>Desugared into the assignment it abbreviates rather than given a statement kind
+        /// of its own, so the semantics come out right for free: the variable must already exist,
+        /// <c>+</c> still concatenates when an operand is not a number, and a bad operand reports
+        /// the same diagnostic the long form would.</para>
+        /// </summary>
+        private bool TryParseCompoundAssignment(int line, List<Token> tokens, out Statement statement)
+        {
+            statement = null!;
+
+            string compound;
+            string name;
+            List<Token> valueTokens;
+
+            if (tokens.Count >= 2 && tokens[0].Kind == TokKind.VarRef && CompoundAssignments.ContainsKey(tokens[1].Text))
+            {
+                compound = tokens[1].Text;
+                name = tokens[0].Text[1..];
+                valueTokens = [.. tokens.Skip(2)];
+            }
+            else if (CompoundAssignments.ContainsKey(tokens[0].Text))
+            {
+                compound = tokens[0].Text;
+                if (tokens.Count < 2 || tokens[1].Kind != TokKind.VarRef)
+                    throw Err(line, $"{compound} assigns to a variable: write `$Name {compound} <value>` or `{compound} $Name <value>`.");
+                name = tokens[1].Text[1..];
+                valueTokens = [.. tokens.Skip(2)];
+            }
+            else
+                return false;
+
+            Arg value = ParseSingleArg(line, valueTokens, $"'{compound}'");
+            statement = new AssignStatement(line, name,
+                new ExprArg(line, [
+                    new AtomArg(line, CompoundAssignments[compound], false),
+                    new VarRefArg(line, name),
+                    value]));
+            return true;
         }
         #endregion
 

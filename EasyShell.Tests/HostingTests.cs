@@ -1,0 +1,564 @@
+using EasyShell.Hosting;
+using EasyShell.Types;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Xunit;
+
+namespace EasyShell.Tests
+{
+    /// <summary>
+    /// The virtualization seam: a Runtime given a fake ShellHost must execute the whole language
+    /// against that fake world - filesystem, console, environment, processes - and never touch
+    /// the real machine. This is the contract a virtual machine embeds EasyShell through, so
+    /// these tests are effectively the VM's compatibility suite.
+    /// </summary>
+    public class HostingTests
+    {
+        #region Fake world
+        /// <summary>A '/'-separated in-memory filesystem - deliberately NOT host conventions.</summary>
+        private sealed class FakeFileSystem : IShellFileSystem
+        {
+            public readonly Dictionary<string, string> Files = new(StringComparer.Ordinal);
+            public readonly HashSet<string> Directories = new(StringComparer.Ordinal) { "/" };
+            public Func<string> GetCwd = () => "/";
+
+            private string Resolve(string path)
+            {
+                if (!path.StartsWith('/')) path = GetCwd().TrimEnd('/') + "/" + path;
+                List<string> parts = new();
+                foreach (string part in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (part == ".") continue;
+                    if (part == "..") { if (parts.Count > 0) parts.RemoveAt(parts.Count - 1); continue; }
+                    parts.Add(part);
+                }
+                return "/" + string.Join('/', parts);
+            }
+
+            // '/'-separated world: host separators never leak in, so this is identity.
+            public string NormalizeSeparators(string path) => path;
+            public string GetFullPath(string path) => Resolve(path);
+            public string Combine(string a, string b) => a.TrimEnd('/') + "/" + b.TrimStart('/');
+            public string? GetDirectoryName(string path)
+            {
+                int i = path.TrimEnd('/').LastIndexOf('/');
+                return i <= 0 ? (path.StartsWith('/') ? "/" : null) : path[..i];
+            }
+            public string GetFileName(string path) => path.TrimEnd('/').Split('/')[^1];
+            public string GetRelativePath(string relativeTo, string path) =>
+                path.StartsWith(relativeTo, StringComparison.Ordinal)
+                    ? path[relativeTo.Length..].TrimStart('/')
+                    : path;
+
+            public bool FileExists(string path) => Files.ContainsKey(Resolve(path));
+            public bool DirectoryExists(string path) => Directories.Contains(Resolve(path));
+
+            public IEnumerable<string> EnumerateFiles(string directory, string pattern, bool recursive)
+            {
+                string root = Resolve(directory).TrimEnd('/');
+                string suffix = pattern.StartsWith('*') ? pattern[1..] : "";
+                foreach (string file in Files.Keys.ToArray())
+                {
+                    if (!file.StartsWith(root + "/", StringComparison.Ordinal)) continue;
+                    if (!recursive && file[(root.Length + 1)..].Contains('/')) continue;
+                    if (pattern == "*" || file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                        yield return file;
+                }
+            }
+
+            public IEnumerable<string> EnumerateDirectories(string directory)
+            {
+                string root = Resolve(directory).TrimEnd('/');
+                return Directories
+                    .Where(d => d.StartsWith(root + "/", StringComparison.Ordinal) && !d[(root.Length + 1)..].Contains('/'))
+                    .ToArray();
+            }
+
+            public string ReadAllText(string path) => Files[Resolve(path)];
+            public void WriteAllText(string path, string content) => Files[Resolve(path)] = content;
+
+            public void CreateDirectory(string path)
+            {
+                string resolved = Resolve(path);
+                string current = "";
+                foreach (string part in resolved.Split('/', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    current += "/" + part;
+                    Directories.Add(current);
+                }
+            }
+
+            public void DeleteFile(string path) => Files.Remove(Resolve(path));
+            public void DeleteDirectory(string path)
+            {
+                string root = Resolve(path);
+                Directories.RemoveWhere(d => d == root || d.StartsWith(root + "/", StringComparison.Ordinal));
+                foreach (string file in Files.Keys.Where(f => f.StartsWith(root + "/", StringComparison.Ordinal)).ToArray())
+                    Files.Remove(file);
+            }
+            public void CopyFile(string source, string target) => Files[Resolve(target)] = Files[Resolve(source)];
+            public void MoveFile(string source, string target) { CopyFile(source, target); DeleteFile(source); }
+            public void MoveDirectory(string source, string target)
+            {
+                string from = Resolve(source), to = Resolve(target);
+                foreach (string file in Files.Keys.Where(f => f.StartsWith(from + "/", StringComparison.Ordinal)).ToArray())
+                {
+                    Files[to + file[from.Length..]] = Files[file];
+                    Files.Remove(file);
+                }
+                Directories.Remove(from);
+                Directories.Add(to);
+            }
+        }
+
+        private sealed class FakeConsole : IShellConsole
+        {
+            public readonly List<string> Output = new();
+            public readonly List<string> Errors = new();
+            public readonly Queue<string> Input = new();
+            public void Write(string text) { }
+            public void WriteLine(string text) => Output.Add(text);
+            public void WriteErrorLine(string text) => Errors.Add(text);
+            public string? ReadLine() => Input.Count > 0 ? Input.Dequeue() : null;
+        }
+
+        private sealed class FakeEnvironment : IShellEnvironment
+        {
+            public readonly Dictionary<string, string> Variables = new(StringComparer.OrdinalIgnoreCase);
+            public string CurrentDirectory { get; set; } = "/";
+            public string? GetVariable(string name) => Variables.TryGetValue(name, out string? v) ? v : null;
+            public void SetVariable(string name, string? value)
+            {
+                if (value is null) Variables.Remove(name);
+                else Variables[name] = value;
+            }
+            public string ExpandVariables(string text) => text;
+        }
+
+        private sealed class FakeProcessRunner : IShellProcessRunner
+        {
+            public readonly List<string> Invocations = new();
+            public readonly HashSet<string> KnownPrograms = new(StringComparer.Ordinal);
+            public string? Resolve(string command) => KnownPrograms.Contains(command) ? "/bin/" + command : null;
+            public int RunForeground(string program, List<string> arguments, TimeSpan? timeout)
+            {
+                Invocations.Add($"fg:{program} {string.Join(' ', arguments)}".TrimEnd());
+                return 0;
+            }
+            public ProcessInvoker.ProcessResult RunCaptured(string program, List<string> arguments, Action<string>? onLine, TimeSpan? timeout)
+            {
+                Invocations.Add($"cap:{program} {string.Join(' ', arguments)}".TrimEnd());
+                onLine?.Invoke("captured-output");
+                return new ProcessInvoker.ProcessResult(0, "captured-output\n", "");
+            }
+
+            /// <summary>Echoes its stdin back with the program name, so a pipeline's wiring is visible.</summary>
+            public ProcessInvoker.ProcessResult RunPiped(string program, List<string> arguments, string? standardInput, TimeSpan? timeout)
+            {
+                Invocations.Add($"pipe:{program} {string.Join(' ', arguments)}".TrimEnd());
+                return new ProcessInvoker.ProcessResult(0, $"[{program}]{standardInput ?? ""}", "");
+            }
+        }
+
+        private static (Runtime Runtime, FakeFileSystem Fs, FakeConsole Console, FakeEnvironment Env, FakeProcessRunner Procs)
+            CreateWorld(Func<string, bool>? reflectionPolicy = null)
+        {
+            FakeFileSystem fs = new();
+            FakeConsole console = new();
+            FakeEnvironment env = new();
+            FakeProcessRunner procs = new();
+            fs.GetCwd = () => env.CurrentDirectory;
+            Runtime rt = new()
+            {
+                Host = new ShellHost
+                {
+                    Console = console,
+                    FileSystem = fs,
+                    Processes = procs,
+                    Environment = env,
+                    CanInvokeQualified = reflectionPolicy,
+                },
+            };
+            return (rt, fs, console, env, procs);
+        }
+
+        private static void Run(Runtime rt, string script) => new EasyShellEngine(rt).Run(script, "<hosted>");
+        #endregion
+
+        [Fact]
+        public void FileCommandsOperateOnTheVirtualWorldOnly()
+        {
+            var (rt, fs, console, _, _) = CreateWorld();
+
+            Run(rt, """
+                mkdir "/home/user"
+                cd "/home/user"
+                print (cwd)
+                """);
+
+            Assert.Contains("/home/user", fs.Directories);
+            Assert.Equal("/home/user", console.Output[^1]);
+        }
+
+        [Fact]
+        public void WriteCopyMoveDeleteRoundTripInTheFakeFs()
+        {
+            var (rt, fs, _, _, _) = CreateWorld();
+            fs.CreateDirectory("/data");
+            fs.WriteAllText("/data/one.txt", "content");
+
+            Run(rt, """
+                cp "/data/one.txt" "/data/two.txt"
+                mv "/data/two.txt" "/data/three.txt"
+                rm "/data/one.txt"
+                """);
+
+            Assert.False(fs.Files.ContainsKey("/data/one.txt"));
+            Assert.False(fs.Files.ContainsKey("/data/two.txt"));
+            Assert.Equal("content", fs.Files["/data/three.txt"]);
+        }
+
+        [Fact]
+        public void RplRewritesAVirtualFile()
+        {
+            var (rt, fs, _, _, _) = CreateWorld();
+            fs.CreateDirectory("/etc");
+            fs.WriteAllText("/etc/version", "version = 0.1.0");
+
+            Run(rt, """rpl "/etc/version" "0.1.0" "0.2.0" """);
+
+            Assert.Equal("version = 0.2.0", fs.Files["/etc/version"]);
+        }
+
+        [Fact]
+        public void TwoRuntimesKeepIndependentWorkingDirectories()
+        {
+            // The exact bug per-host environments exist to prevent: two sessions into the same
+            // image must not share a process-global cwd.
+            var a = CreateWorld();
+            var b = CreateWorld();
+            a.Fs.CreateDirectory("/home/alice");
+            b.Fs.CreateDirectory("/home/bob");
+
+            Run(a.Runtime, """cd "/home/alice" """);
+            Run(b.Runtime, """cd "/home/bob" """);
+
+            Assert.Equal("/home/alice", a.Env.CurrentDirectory);
+            Assert.Equal("/home/bob", b.Env.CurrentDirectory);
+        }
+
+        [Fact]
+        public void PrintAndErrorsGoToTheHostConsole()
+        {
+            var (rt, _, console, _, _) = CreateWorld();
+
+            Run(rt, """print "into the fake" """);
+
+            Assert.Equal("into the fake", Assert.Single(console.Output));
+        }
+
+        [Fact]
+        public void EnvironmentVariablesLiveInTheHost()
+        {
+            var (rt, _, console, env, _) = CreateWorld();
+
+            Run(rt, """
+                setenv "GREETING" "hello"
+                print (getenv "GREETING")
+                """);
+
+            Assert.Equal("hello", env.Variables["GREETING"]);
+            Assert.Equal("hello", console.Output[^1]);
+        }
+
+        [Fact]
+        public void ExternalProgramsGoThroughTheHostProcessTable()
+        {
+            var (rt, _, console, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("uname");
+
+            Run(rt, "uname -a");
+
+            Assert.Equal("cap:uname -a", Assert.Single(procs.Invocations));
+            Assert.Contains("captured-output", console.Output);
+        }
+
+        [Fact]
+        public void InteractiveModeRunsProgramsInTheForeground()
+        {
+            var (rt, _, _, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("vim");
+            rt.AssignOrDeclare(Executor.InteractiveVariable, new Value(ValueKind.Bool, true));
+
+            Run(rt, "vim notes.txt");
+
+            Assert.Equal("fg:vim notes.txt", Assert.Single(procs.Invocations));
+        }
+
+        [Fact]
+        public void DottedProgramNamesResolveThroughTheHostNotThePath()
+        {
+            var (rt, _, _, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("vim.tiny");
+
+            Run(rt, "vim.tiny notes.txt");
+
+            Assert.Equal("cap:vim.tiny notes.txt", Assert.Single(procs.Invocations));
+        }
+
+        // ------------------------------------------------------------------ pipes and redirection
+
+        [Fact]
+        public void PipeChainsProgramsStdoutToStdin()
+        {
+            var (rt, _, _, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("ls");
+            procs.KnownPrograms.Add("wc");
+
+            Run(rt, "ls | wc");
+
+            // The fake echoes "[name]" + whatever it was fed, so the chain is visible end to end.
+            Assert.Equal(["pipe:ls", "pipe:wc"], procs.Invocations);
+        }
+
+        [Fact]
+        public void PipelineValueIsAvailableInExpressionContext()
+        {
+            var (rt, _, console, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("ls");
+            procs.KnownPrograms.Add("wc");
+
+            Run(rt, """
+                $n = (ls | wc)
+                print $n
+                """);
+
+            Assert.Equal("[wc][ls]", console.Output[^1]);
+        }
+
+        [Fact]
+        public void RedirectionWritesBuiltinOutputToAFile()
+        {
+            var (rt, fs, console, _, _) = CreateWorld();
+
+            Run(rt, "print hello > /out.txt");
+
+            Assert.Equal("hello\n", fs.Files["/out.txt"]);
+            Assert.Empty(console.Output);   // it went to the file, not the screen
+        }
+
+        [Fact]
+        public void AppendRedirectionKeepsWhatWasThere()
+        {
+            var (rt, fs, _, _, _) = CreateWorld();
+
+            Run(rt, """
+                print one > /log.txt
+                print two >> /log.txt
+                """);
+
+            Assert.Equal("one\ntwo\n", fs.Files["/log.txt"]);
+        }
+
+        [Fact]
+        public void InputRedirectionFeedsTheFirstStage()
+        {
+            var (rt, fs, _, _, procs) = CreateWorld();
+            fs.Files["/in.txt"] = "seed";
+            procs.KnownPrograms.Add("cat");
+
+            Run(rt, """
+                $x = (cat < /in.txt)
+                print $x
+                """);
+
+            Assert.Equal("[cat]seed", rt.GetVar("x").Value.AsString());
+        }
+
+        [Fact]
+        public void OperatorsInHeadPositionKeepTheirMeaning()
+        {
+            // The whole disambiguation rule: `>` and `||` are ordinary commands when they are the
+            // head of an argument list. If pipeline parsing ever swallows these, comparisons and
+            // concatenation break language-wide.
+            var (rt, _, console, _, _) = CreateWorld();
+
+            Run(rt, """
+                print (> 5 3)
+                print (|| "a" "b")
+                """);
+
+            Assert.Equal("TRUE", console.Output[0]);
+            Assert.Equal("ab", console.Output[1]);
+        }
+
+        [Fact]
+        public void QuotedOperatorsAreOrdinaryArguments()
+        {
+            var (rt, _, console, _, _) = CreateWorld();
+
+            Run(rt, """print ">"  """);
+
+            Assert.Equal(">", console.Output[^1]);
+        }
+
+        [Fact]
+        public void RedirectionWithoutATargetIsAScriptError()
+        {
+            var (rt, _, _, _, _) = CreateWorld();
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(() => Run(rt, "print hello >"));
+            Assert.Contains("needs a file name", ex.Message);
+        }
+
+        [Fact]
+        public void MisplacedRedirectionInAPipelineExplainsItself()
+        {
+            var (rt, _, _, _, procs) = CreateWorld();
+            procs.KnownPrograms.Add("ls");
+            procs.KnownPrograms.Add("wc");
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(
+                () => Run(rt, "ls > /a.txt | wc"));
+            Assert.Contains("last command", ex.Message);
+        }
+
+        [Fact]
+        public void DottedNamesThatResolveToNoTypeAreProgramsNotReflection()
+        {
+            // greet.wasm before chmod +x: the host cannot resolve it, and "greet" is no .NET
+            // type. The old routing sent this into reflection, where a deny-all policy answered
+            // "'greet.wasm' is not permitted in this environment" - a sandbox refusal for a
+            // call that could never have existed. It must reach the process path instead, whose
+            // errors (command not found, permission denied) tell the user what to actually do.
+            var (rt, _, _, _, procs) = CreateWorld(reflectionPolicy: _ => false);
+
+            Run(rt, "greet.wasm");
+
+            Assert.Equal("cap:greet.wasm", Assert.Single(procs.Invocations));
+        }
+
+        [Fact]
+        public void PolicyStillAnswersForNamesThatAreRealMembers()
+        {
+            // The routing fix must not soften the sandbox: a dotted name that IS a real .NET
+            // member still goes to reflection and still hears the policy's no.
+            var (rt, _, _, _, procs) = CreateWorld(reflectionPolicy: _ => false);
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(() => Run(rt, "System.Math.Abs 5"));
+            Assert.Contains("not permitted", ex.Message);
+            Assert.Empty(procs.Invocations);
+        }
+
+        [Fact]
+        public void ReflectionPolicyBlocksQualifiedInvocation()
+        {
+            var (rt, _, _, _, _) = CreateWorld(reflectionPolicy: _ => false);
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(
+                () => Run(rt, """System.IO.File.WriteAllText "/tmp/escape.txt" "boo" """));
+            Assert.Contains("not permitted", ex.Message);
+        }
+
+        [Fact]
+        public void ReflectionPolicyCanAllowlistPureMembers()
+        {
+            var (rt, _, console, _, _) = CreateWorld(
+                reflectionPolicy: name => name.StartsWith("System.Math.", StringComparison.Ordinal));
+
+            Run(rt, "print (sqrt 16)");
+            Assert.Equal("4", console.Output[^1]);
+
+            Assert.Throws<Exceptions.EasyShellException>(
+                () => Run(rt, """System.IO.File.ReadAllText "/etc/passwd" """));
+        }
+
+        [Fact]
+        public void ReflectionPolicyGatesTheCallHandlePathToo()
+        {
+            // The escape the CALL path used to leave open: instance reflection on any value
+            // reaches System.Object.GetType and from there walks Type -> Assembly -> arbitrary
+            // members, defeating a policy that only guards the fully-qualified form. Both paths
+            // must go through the same gate.
+            var (rt, _, _, _, _) = CreateWorld(
+                reflectionPolicy: name => name.StartsWith("System.Math.", StringComparison.Ordinal));
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(
+                () => Run(rt, """CALL "" GetType"""));
+            Assert.Contains("not permitted", ex.Message);
+        }
+
+        [Fact]
+        public void ReflectionPolicyStillAllowsPermittedInstanceCalls()
+        {
+            // The gate is by concrete type + member, so a policy that allows System.String.*
+            // still lets `CALL $s ToUpper` through - the seam narrows, it does not slam shut.
+            var (rt, _, console, _, _) = CreateWorld(
+                reflectionPolicy: name => name.StartsWith("System.String.", StringComparison.Ordinal));
+
+            Run(rt, """
+                STRINGVAR S "hello"
+                print (CALL $S ToUpper)
+                """);
+            Assert.Equal("HELLO", console.Output[^1]);
+        }
+
+        [Fact]
+        public void NormalizeSeparatorsIsAHostDecision()
+        {
+            // The virtual filesystem keeps its own '/' convention; the file built-ins must not
+            // rewrite it to a host separator. (On the default host, they still fold '\' <-> '/'.)
+            var (rt, fs, _, _, _) = CreateWorld();
+            fs.CreateDirectory("/a/b");
+            fs.WriteAllText("/a/b/c.txt", "x");
+
+            Run(rt, """rm "/a/b/c.txt" """);
+            Assert.False(fs.Files.ContainsKey("/a/b/c.txt"));   // the '/'-path resolved, unmangled
+        }
+
+        [Fact]
+        public void ScriptArgumentsArePerRuntime()
+        {
+            var a = CreateWorld();
+            var b = CreateWorld();
+            a.Runtime.ScriptArguments = ["--fast"];
+            b.Runtime.ScriptArguments = ["--slow"];
+
+            Run(a.Runtime, """print (?: (hasarg "--fast") "yes" "no")""");
+            Run(b.Runtime, """print (?: (hasarg "--fast") "yes" "no")""");
+
+            Assert.Equal("yes", a.Console.Output[^1]);
+            Assert.Equal("no", b.Console.Output[^1]);
+        }
+
+        [Fact]
+        public void ReplRunsAgainstTheHostConsole()
+        {
+            var (rt, fs, console, _, _) = CreateWorld();
+            fs.CreateDirectory("/work");
+            console.Input.Enqueue("INTVAR X 2");
+            console.Input.Enqueue("$X = (+ $X 40)");
+            console.Input.Enqueue("print (|| \"answer: \" $X)");
+            // EOF ends the session.
+
+            int code = Interactive.EasyShellRepl.Run(new Interactive.ReplOptions
+            {
+                Runtime = rt,
+                Prompt = () => "", // prompts go through Write, which the fake discards
+            });
+
+            Assert.Equal(0, code);
+            Assert.Contains("answer: 42", console.Output);
+        }
+
+        [Fact]
+        public void DefaultHostIsTheRealMachine()
+        {
+            // The seam must be invisible when unused: a plain Runtime gets the historical world.
+            Runtime rt = new();
+            Assert.Same(ShellHost.Default, rt.Host);
+            Assert.Equal(System.IO.Directory.GetCurrentDirectory(), rt.Host.Environment.CurrentDirectory);
+        }
+    }
+}

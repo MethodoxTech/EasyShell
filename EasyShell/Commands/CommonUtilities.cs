@@ -275,6 +275,10 @@ namespace EasyShell.Commands
         #region Routines
         private static string ExpandPath(string path)
             => NormalizeSeparators(Environment.ExpandEnvironmentVariables(path));
+        /// <summary>Delete a file with the locked-file retry policy. Exposed for the default shell host.</summary>
+        internal static void DeleteFileResilient(string path) => DeleteFileWithRetry(path);
+        /// <summary>Delete a directory recursively with the retry policy. Exposed for the default shell host.</summary>
+        internal static void DeleteDirectoryResilient(string path) => DeleteDirectoryWithRetry(path);
         private static void DeleteFileWithRetry(string path)
         {
             for (int attempt = 1; ; attempt++)

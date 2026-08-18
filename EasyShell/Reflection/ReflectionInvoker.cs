@@ -27,6 +27,21 @@ namespace EasyShell.Reflection
         #endregion
 
         #region Methods
+        /// <summary>
+        /// Would this dotted name even reach a .NET type? Command routing uses this to tell a
+        /// qualified member from a program name that happens to contain dots (vim.tiny,
+        /// greet.wasm, python3.12): when the type half resolves to nothing, the name is not a
+        /// .NET call and belongs on the process path - where "command not found" and
+        /// "permission denied" speak the user's language, instead of a reflection-policy
+        /// refusal for a call that could never have existed. Resolution only; nothing invokes.
+        /// </summary>
+        public static bool CanResolveQualified(string fullyQualified)
+        {
+            int lastDot = fullyQualified.LastIndexOf('.');
+            if (lastDot <= 0 || lastDot == fullyQualified.Length - 1) return false;
+            return ResolveType(fullyQualified[..lastDot]) is not null;
+        }
+
         // Example: System.DateTime.Now                       (static property)
         // Example: System.String.Format "x={0}" 5             (static method)
         // Example: System.IO.File.WriteAllText "c:/x" "hi"    (static method)

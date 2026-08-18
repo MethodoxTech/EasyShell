@@ -187,19 +187,14 @@ namespace EasyShell.Tests
         [Fact]
         public void HasArgAndArgSeeWhatTheScriptWasGiven()
         {
-            try
-            {
-                CommonUtilities.SetScriptArguments(["--incremental", "release"]);
+            // Script arguments are per-Runtime state now, so two embedded sessions cannot see
+            // each other's flags. (The CommonUtilities statics remain for direct .NET calls.)
+            Runtime rt = new() { ScriptArguments = ["--incremental", "release"] };
 
-                Assert.True(ScriptHost.Evaluate("""hasarg "--INCREMENTAL" """).AsBool());   // case-insensitive
-                Assert.False(ScriptHost.Evaluate("""hasarg "--nope" """).AsBool());
-                Assert.Equal("release", ScriptHost.EvaluateText("arg 1"));
-                Assert.Equal("", ScriptHost.EvaluateText("arg 99"));                        // never an error
-            }
-            finally
-            {
-                CommonUtilities.SetScriptArguments([]);
-            }
+            Assert.True(ScriptHost.Evaluate("""hasarg "--INCREMENTAL" """, rt).AsBool());   // case-insensitive
+            Assert.False(ScriptHost.Evaluate("""hasarg "--nope" """, rt).AsBool());
+            Assert.Equal("release", ScriptHost.EvaluateText("arg 1", rt));
+            Assert.Equal("", ScriptHost.EvaluateText("arg 99", rt));                        // never an error
         }
         #endregion
 

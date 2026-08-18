@@ -42,38 +42,23 @@ namespace EasyShell
         #region Command Mapping
         private static readonly HashSet<string> OperatorCmds =
             new(StringComparer.OrdinalIgnoreCase) { "+", "-", "*", "/", "%", "^" };
+        /// <summary>
+        /// Reflection-backed aliases. Only names whose targets are PURE (no machine state) or
+        /// deliberately host-only (zip) remain here; everything that touches filesystem, console,
+        /// environment or working directory is a host-routed built-in now - see
+        /// <see cref="ExecuteHostBuiltin"/> - so that a virtualized <see cref="Hosting.ShellHost"/>
+        /// carries the whole command set with it.
+        /// </summary>
         private static readonly Dictionary<string, string> Aliases =
             new(StringComparer.OrdinalIgnoreCase)
             {
-                // Working directory
-                ["cd"] = "System.IO.Directory.SetCurrentDirectory",
-                ["cwd"] = "System.IO.Directory.GetCurrentDirectory",
-                // Path
+                // Path arithmetic (pure)
                 // Remark: Deliberately NOT System.IO.Path.Join - see CommonUtilities.JoinPath for why.
                 ["joinpath"] = "EasyShell.Commands.CommonUtilities.JoinPath",
-                ["resolve"] = "System.IO.Path.GetFullPath",
-                ["exists"] = "EasyShell.Commands.CommonUtilities.Exists",
-                // Env
-                ["setenv"] = "System.Environment.SetEnvironmentVariable",
-                ["getenv"] = "System.Environment.GetEnvironmentVariable",
-                // Script arguments
-                ["hasarg"] = "EasyShell.Commands.CommonUtilities.HasArgument",
-                ["arg"] = "EasyShell.Commands.CommonUtilities.Argument",
-                // File Sys
-                ["mkdir"] = "System.IO.Directory.CreateDirectory",
-                ["remove"] = "EasyShell.Commands.CommonUtilities.Remove",
-                ["rm"] = "EasyShell.Commands.CommonUtilities.Remove", // Shorthand
-                ["removeall"] = "EasyShell.Commands.CommonUtilities.RemoveAll", // By wildcard, recursive by default
-                ["cp"] = "EasyShell.Commands.CommonUtilities.Copy",
-                ["mv"] = "EasyShell.Commands.CommonUtilities.Move",
-                // STDIO
-                ["print"] = "System.Console.WriteLine",
                 // String
                 ["format"] = "System.String.Format",
-                // File
-                ["rpl"] = "EasyShell.Commands.CommonUtilities.Replace",
-                ["regrpl"] = "EasyShell.Commands.CommonUtilities.RegexReplace",
-                // Zip
+                // Zip (host-only by design: operates on real archives; a sandboxing host blocks it
+                // via CanInvokeQualified)
                 ["zip"] = "EasyShell.Commands.ZipUtil.CompressArchive",
                 // Math
                 ["sqrt"] = "System.Math.Sqrt",
@@ -133,8 +118,8 @@ namespace EasyShell
                     // Statement context: an external program streams its output live, so there is
                     // nothing left to echo afterwards (doing both printed everything twice).
                     Value output = ExecuteCommand(rt, cmd.Args, cmd.Line, statementContext: true);
-                    if (output.Kind == ValueKind.String && !string.IsNullOrEmpty(output.Data as string))
-                        Console.WriteLine(output.Data);
+                    if (output.Kind == ValueKind.String && output.Data is string text && !string.IsNullOrEmpty(text))
+                        rt.Host.Console.WriteLine(text);
                     return;
 
                 default:
@@ -167,6 +152,13 @@ namespace EasyShell
             if (args.Count == 0)
                 return Value.Null;
 
+            // Pipes and redirection are recognized here, in the one funnel both statements and
+            // parenthesized expressions pass through, so `ls | wc -l` reads the same as a
+            // statement and as `$n = (ls | wc -l)`. See Pipelines for the head-position rule
+            // that keeps `(> $a $b)` a comparison.
+            if (Pipelines.Uses(args))
+                return Pipelines.Execute(rt, args, line, statementContext);
+
             // Command name must be an AtomArg or VarRefArg resolving to string.
             Value cmdNameVal = EvaluateArg(rt, args[0]);
             string cmdName = cmdNameVal.AsString();
@@ -183,12 +175,16 @@ namespace EasyShell
                 return ExecuteExternal(rt, runArgs[0], runArgs.GetRange(1, runArgs.Count - 1), line, statementContext);
             }
 
+            // Host-routed built-ins: filesystem, console, environment, working directory.
+            if (IsHostBuiltin(cmdName))
+                return ExecuteHostBuiltin(rt, cmdName, EvalArgs(rt, args.Skip(1)), line);
+
             // Command alias
             if (Aliases.TryGetValue(cmdName, out string? target))
             {
                 // Replace command name with fully-qualified target and invoke as usual
                 // Equivalent to: target <args...>
-                return InvokeQualified(target, EvalArgs(rt, args.Skip(1)), line);
+                return InvokeQualified(rt, target, EvalArgs(rt, args.Skip(1)), line);
             }
 
             // Built-in: variable declarations
@@ -225,7 +221,7 @@ namespace EasyShell
                     string method = EvaluateArg(rt, args[2]).AsString();
                     List<Value> callArgs = EvalArgs(rt, args.Skip(3));
 
-                    return InvokeOnHandle(handle, method, callArgs, line);
+                    return InvokeOnHandle(rt, handle, method, callArgs, line);
                 }
 
                 throw new EasyShellException($"{line}: CALL syntax: CALL <funcName> OR CALL <handle> <method> [args]");
@@ -405,10 +401,15 @@ namespace EasyShell
             // argument as the target: System.DateTime.AddDays $when 15
             //
             // A dotted name is ambiguous - `vim.tiny`, `python3.12` and `node.exe` are programs -
-            // so it is a .NET call only when nothing runnable answers to it. See ProgramResolver.
-            if (!File.Exists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal)
-                && !ProgramResolver.Exists(cmdName))
-                return InvokeQualified(cmdName, EvalArgs(rt, args.Skip(1)), line);
+            // so it is a .NET call only when nothing runnable answers to it AND the name's type
+            // half actually resolves. Without the resolution check, a typo'd or not-yet-
+            // executable program (greet.wasm before chmod +x) fell into reflection and died as
+            // a POLICY refusal - "'greet.wasm' is not permitted" - when the honest errors,
+            // "command not found" or "permission denied", live on the process path.
+            if (!rt.Host.FileSystem.FileExists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal)
+                && rt.Host.Processes.Resolve(cmdName) is null
+                && ReflectionInvoker.CanResolveQualified(cmdName))
+                return InvokeQualified(rt, cmdName, EvalArgs(rt, args.Skip(1)), line);
 
             // External executable
             return ExecuteExternal(rt, cmdName,
@@ -432,7 +433,7 @@ namespace EasyShell
                 int foregroundExit;
                 try
                 {
-                    foregroundExit = ProcessInvoker.RunForeground(program, arguments, GetProcessTimeout(rt));
+                    foregroundExit = rt.Host.Processes.RunForeground(program, arguments, GetProcessTimeout(rt));
                 }
                 catch (Exception e)
                 {
@@ -448,8 +449,8 @@ namespace EasyShell
             {
                 // In statement context stream live so long builds show progress; in expression
                 // context stay quiet, because the caller wants the text as a value.
-                Action<string>? sink = statementContext ? Console.WriteLine : null;
-                result = ProcessInvoker.RunStreaming(program, arguments, sink, GetProcessTimeout(rt));
+                Action<string>? sink = statementContext ? rt.Host.Console.WriteLine : null;
+                result = rt.Host.Processes.RunCaptured(program, arguments, sink, GetProcessTimeout(rt));
             }
             catch (Exception e)
             {
@@ -465,7 +466,7 @@ namespace EasyShell
         }
 
         /// <summary>Record the exit code so scripts can inspect it, then abort unless told not to.</summary>
-        private static void CheckExitCode(Runtime rt, string program, int exitCode, int line)
+        internal static void CheckExitCode(Runtime rt, string program, int exitCode, int line)
         {
             SetLastExitCode(rt, exitCode);
 
@@ -476,13 +477,121 @@ namespace EasyShell
         }
         #endregion
 
+        #region Host built-ins
+        private static readonly HashSet<string> HostBuiltins = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "cd", "cwd", "resolve", "exists", "setenv", "getenv", "hasarg", "arg",
+            "mkdir", "remove", "rm", "removeall", "cp", "mv", "print", "rpl", "regrpl",
+        };
+
+        private static bool IsHostBuiltin(string cmdName) => HostBuiltins.Contains(cmdName);
+
+        /// <summary>
+        /// The commands that touch the machine, routed through <see cref="Runtime.Host"/>. These
+        /// were reflection aliases onto System.IO/System.Console statics; as built-ins they behave
+        /// identically on the default host and follow the host into any virtual world.
+        /// </summary>
+        private static Value ExecuteHostBuiltin(Runtime rt, string cmdName, List<Value> args, int line)
+        {
+            Hosting.ShellHost host = rt.Host;
+
+            string Arg(int i, string what)
+            {
+                if (i >= args.Count)
+                    throw new EasyShellException($"{line}: {cmdName.ToUpperInvariant()} expects {what}.");
+                return args[i].AsString();
+            }
+
+            switch (cmdName.ToLowerInvariant())
+            {
+                case "cd":
+                {
+                    string target = host.Environment.ExpandVariables(Arg(0, "a directory path"));
+                    string resolved = host.FileSystem.GetFullPath(target);
+                    if (!host.FileSystem.DirectoryExists(resolved))
+                        throw new EasyShellException($"{line}: Directory not found: {resolved}");
+                    host.Environment.CurrentDirectory = resolved;
+                    return Value.Null;
+                }
+                case "cwd":
+                    return new Value(ValueKind.String, host.Environment.CurrentDirectory);
+                case "resolve":
+                    return new Value(ValueKind.String, host.FileSystem.GetFullPath(
+                        host.Environment.ExpandVariables(Arg(0, "a path"))));
+                case "exists":
+                    return new Value(ValueKind.Bool, Hosting.ShellBuiltins.Exists(host, Arg(0, "a path")));
+                case "setenv":
+                    host.Environment.SetVariable(Arg(0, "a name and a value"), Arg(1, "a value"));
+                    return Value.Null;
+                case "getenv":
+                {
+                    string? value = host.Environment.GetVariable(Arg(0, "a name"));
+                    return value is null ? Value.Null : new Value(ValueKind.String, value);
+                }
+                case "hasarg":
+                {
+                    string flag = Arg(0, "a flag name");
+                    bool has = rt.ScriptArguments.Any(a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+                    return new Value(ValueKind.Bool, has);
+                }
+                case "arg":
+                {
+                    int index = args.Count > 0 ? args[0].AsInt() : throw new EasyShellException($"{line}: ARG expects an index.");
+                    string value = index >= 0 && index < rt.ScriptArguments.Length ? rt.ScriptArguments[index] : string.Empty;
+                    return new Value(ValueKind.String, value);
+                }
+                case "mkdir":
+                    host.FileSystem.CreateDirectory(host.FileSystem.GetFullPath(
+                        host.Environment.ExpandVariables(Arg(0, "a directory path"))));
+                    return Value.Null;
+                case "remove" or "rm":
+                    return new Value(ValueKind.Bool, Hosting.ShellBuiltins.Remove(host, Arg(0, "a path")));
+                case "removeall":
+                {
+                    bool recursive = args.Count < 3 || args[2].AsBool();
+                    int removed = Hosting.ShellBuiltins.RemoveAll(host, Arg(0, "a folder and a pattern"), Arg(1, "a pattern"), recursive);
+                    return new Value(ValueKind.Int, removed);
+                }
+                case "cp":
+                    return new Value(ValueKind.Bool, Hosting.ShellBuiltins.Copy(host, Arg(0, "a source and a target"), Arg(1, "a target")));
+                case "mv":
+                    return new Value(ValueKind.Bool, Hosting.ShellBuiltins.Move(host, Arg(0, "a source and a target"), Arg(1, "a target")));
+                case "print":
+                {
+                    // Mirrors Console.WriteLine overload behavior: one argument prints verbatim,
+                    // several treat the first as a format string.
+                    if (args.Count == 0) { host.Console.WriteLine(string.Empty); return Value.Null; }
+                    string text = args.Count == 1
+                        ? args[0].AsString()
+                        : string.Format(args[0].AsString(), args.Skip(1).Select(v => (object)v.AsString()).ToArray());
+                    host.Console.WriteLine(text);
+                    return Value.Null;
+                }
+                case "rpl":
+                    Hosting.ShellBuiltins.Replace(host, Arg(0, "a file, a search text and a replacement"), Arg(1, "a search text"), Arg(2, "a replacement"));
+                    return Value.Null;
+                case "regrpl":
+                    Hosting.ShellBuiltins.RegexReplace(host, Arg(0, "a file, a pattern and a replacement"), Arg(1, "a pattern"), Arg(2, "a replacement"));
+                    return Value.Null;
+                default:
+                    throw new EasyShellException($"{line}: Unknown built-in '{cmdName}'.");
+            }
+        }
+        #endregion
+
         #region Routines
         /// <summary>
         /// Invokes a fully-qualified .NET member, tagging failures with the script line - reflection
         /// itself has no idea which line asked for it.
         /// </summary>
-        private static Value InvokeQualified(string fullyQualified, List<Value> args, int line)
+        private static Value InvokeQualified(Runtime rt, string fullyQualified, List<Value> args, int line)
         {
+            // The reflection policy is the sandbox line: a virtualizing host that cannot allow
+            // arbitrary .NET access refuses here, and the refusal reads as an ordinary script
+            // error rather than a crash.
+            if (rt.Host.CanInvokeQualified is { } permits && !permits(fullyQualified))
+                throw new EasyShellException($"{line}: '{fullyQualified}' is not permitted in this environment.");
+
             try
             {
                 return ReflectionInvoker.InvokeFullyQualified(fullyQualified, args);
@@ -495,8 +604,22 @@ namespace EasyShell
         /// <summary>
         /// Same, for `CALL &lt;handle&gt; &lt;method&gt; [args]`.
         /// </summary>
-        private static Value InvokeOnHandle(object handle, string method, List<Value> args, int line)
+        private static Value InvokeOnHandle(Runtime rt, object handle, string method, List<Value> args, int line)
         {
+            // Instance reflection is the same escape hatch as qualified reflection and MUST go
+            // through the same policy - otherwise `CALL "" GetType` walks String -> Type ->
+            // Assembly -> GetType("System.IO.File") -> Invoke and reaches arbitrary host members
+            // that `System.IO.File.WriteAllText ...` (which routes through InvokeQualified) would
+            // have refused. The gate name is the CONCRETE receiver type plus the member, so a
+            // policy that allows only pure namespaces stops the pivot at its first hop: the
+            // returned Type is a System.RuntimeType, and no further CALL on it is permitted.
+            if (rt.Host.CanInvokeQualified is { } permits)
+            {
+                string qualified = $"{handle.GetType().FullName}.{method}";
+                if (!permits(qualified))
+                    throw new EasyShellException($"{line}: '{qualified}' is not permitted in this environment.");
+            }
+
             try
             {
                 return ReflectionInvoker.InvokeInstance(handle, method, args);
@@ -542,7 +665,7 @@ namespace EasyShell
         /// <summary>Whether this runtime is attached to a person at a terminal. See <see cref="InteractiveVariable"/>.</summary>
         public static bool IsInteractive(Runtime rt)
             => rt.TryGetVar(InteractiveVariable, out Variable? v) && v.Value.AsBool();
-        private static TimeSpan? GetProcessTimeout(Runtime rt)
+        internal static TimeSpan? GetProcessTimeout(Runtime rt)
         {
             if (!rt.TryGetVar(ProcessTimeoutVariable, out Variable? v))
                 return null;

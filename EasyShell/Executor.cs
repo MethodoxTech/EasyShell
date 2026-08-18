@@ -394,9 +394,14 @@ namespace EasyShell
             // argument as the target: System.DateTime.AddDays $when 15
             //
             // A dotted name is ambiguous - `vim.tiny`, `python3.12` and `node.exe` are programs -
-            // so it is a .NET call only when nothing runnable answers to it. See ProgramResolver.
+            // so it is a .NET call only when nothing runnable answers to it AND the name's type
+            // half actually resolves. Without the resolution check, a typo'd or not-yet-
+            // executable program (greet.wasm before chmod +x) fell into reflection and died as
+            // a POLICY refusal - "'greet.wasm' is not permitted" - when the honest errors,
+            // "command not found" or "permission denied", live on the process path.
             if (!rt.Host.FileSystem.FileExists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal)
-                && rt.Host.Processes.Resolve(cmdName) is null)
+                && rt.Host.Processes.Resolve(cmdName) is null
+                && ReflectionInvoker.CanResolveQualified(cmdName))
                 return InvokeQualified(rt, cmdName, EvalArgs(rt, args.Skip(1)), line);
 
             // External executable

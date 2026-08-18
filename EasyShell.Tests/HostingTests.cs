@@ -301,6 +301,33 @@ namespace EasyShell.Tests
         }
 
         [Fact]
+        public void DottedNamesThatResolveToNoTypeAreProgramsNotReflection()
+        {
+            // greet.wasm before chmod +x: the host cannot resolve it, and "greet" is no .NET
+            // type. The old routing sent this into reflection, where a deny-all policy answered
+            // "'greet.wasm' is not permitted in this environment" - a sandbox refusal for a
+            // call that could never have existed. It must reach the process path instead, whose
+            // errors (command not found, permission denied) tell the user what to actually do.
+            var (rt, _, _, _, procs) = CreateWorld(reflectionPolicy: _ => false);
+
+            Run(rt, "greet.wasm");
+
+            Assert.Equal("cap:greet.wasm", Assert.Single(procs.Invocations));
+        }
+
+        [Fact]
+        public void PolicyStillAnswersForNamesThatAreRealMembers()
+        {
+            // The routing fix must not soften the sandbox: a dotted name that IS a real .NET
+            // member still goes to reflection and still hears the policy's no.
+            var (rt, _, _, _, procs) = CreateWorld(reflectionPolicy: _ => false);
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(() => Run(rt, "System.Math.Abs 5"));
+            Assert.Contains("not permitted", ex.Message);
+            Assert.Empty(procs.Invocations);
+        }
+
+        [Fact]
         public void ReflectionPolicyBlocksQualifiedInvocation()
         {
             var (rt, _, _, _, _) = CreateWorld(reflectionPolicy: _ => false);

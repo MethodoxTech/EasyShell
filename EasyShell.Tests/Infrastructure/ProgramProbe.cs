@@ -19,7 +19,14 @@ namespace EasyShell.Tests.Infrastructure
     /// </summary>
     public sealed class ProgramProbe : IDisposable
     {
-        private readonly TempDirectory _directory = new("EasyShellPrograms");
+        /// <summary>
+        /// The space in the folder name is deliberate, and is the whole regression test for the
+        /// cmd.exe /c quoting rule: a batch script whose PATH has no space in it kept its quotes
+        /// by accident, so every argument-passing test here passed on a spaceless temp folder and
+        /// failed on a Windows machine whose user profile has a space in it. Real paths - Program
+        /// Files, a user's name - have spaces; the test folder now does too.
+        /// </summary>
+        private readonly TempDirectory _directory = new("EasyShell Programs");
         private readonly string? _originalPath;
 
         /// <param name="onPath">Prepend this folder to PATH, so bare names resolve to these programs.</param>

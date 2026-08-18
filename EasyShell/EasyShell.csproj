@@ -12,4 +12,10 @@
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--BuildCommandProcessorArguments is pure string work whose whole point is a rule of cmd.exe's;
+        the test for it has to run on every platform, and it does not belong in the public surface.-->
+    <InternalsVisibleTo Include="EasyShell.Tests" />
+  </ItemGroup>
+
 </Project>

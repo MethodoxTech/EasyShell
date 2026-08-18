@@ -115,6 +115,15 @@ Issues:
       `SingleOrDefault` as "Sequence contains more than one element" with no line number. It is a
       script error naming the line and suggesting the parentheses.
 
+REPL:
+
+- [ ] Support tab-completion like most shells do.
+
+Features:
+
+- [ ] (Proper shell) Piping: at least the rudimentary form (aka. not stream based)? Make sure it works cross-platform.
+- [ ] (Utility) Can our syntax support ending in `;` and thus single-line for entire script?
+
 Documentation:
 
 - [ ] Tutorials on YouTube

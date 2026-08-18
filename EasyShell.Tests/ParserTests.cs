@@ -182,6 +182,40 @@ namespace EasyShell.Tests
             EasyShellException e = Assert.Throws<EasyShellException>(() => Parse(script, origin: "Build.easy"));
             Assert.Contains("Build.easy:", e.Message);
         }
+
+        [Fact]
+        public void TheMissingParenthesesHintShowsTheConditionAsItShouldHaveBeenWritten()
+        {
+            EasyShellException e = Assert.Throws<EasyShellException>(() => Parse("IF == $X 1\n    print x\nEND"));
+
+            Assert.Contains("wrap the expression in parentheses", e.Message);
+            Assert.Contains("(== $X 1)", e.Message);
+        }
+
+        [Fact]
+        public void AConditionThatIsAlreadyParenthesizedIsToldWhatToRemoveInstead()
+        {
+            // The hint used to be built by re-joining every token and bracketing the result, so a
+            // condition that WAS parenthesized was answered with a suggestion containing its own
+            // parentheses - `(( == $X 1 ) extra)` - which is neither valid nor actionable.
+            EasyShellException e = Assert.Throws<EasyShellException>(() => Parse("IF (== $X 1) extra\n    print x\nEND"));
+
+            Assert.Contains("remove what follows the expression", e.Message);
+            Assert.Contains("`extra`", e.Message);
+            Assert.DoesNotContain("wrap the expression", e.Message);
+        }
+
+        [Fact]
+        public void ATrailingColonIsNamedAsTheMistakeItUsuallyIs()
+        {
+            // `while (< $a 3):` is Python muscle memory and the single most likely way to reach
+            // this message, so it says what the colon was and why the language does not want one.
+            EasyShellException e = Assert.Throws<EasyShellException>(() => Parse("WHILE (< $a 3):\n    print $a\nEND"));
+
+            Assert.Contains("`:`", e.Message);
+            Assert.Contains("not colon-terminated", e.Message);
+        }
+
         #endregion
     }
 }

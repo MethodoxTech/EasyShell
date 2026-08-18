@@ -296,13 +296,41 @@ namespace EasyShell.Parsing
         {
             List<Arg> args = ParseArgTokens(line, tokens);
 
-            return args.Count switch
+            if (args.Count == 1)
+                return args[0];
+            if (args.Count == 0)
+                throw Err(line, $"{what} is missing its value.");
+
+            // "Wrap the expression in parentheses" is the right advice for `IF == $X 1` and
+            // nonsense for someone who already did. The suggestion was built by re-joining every
+            // token and putting brackets round the lot, so `WHILE (< $a 3):` was answered with
+            // `e.g. (( < $a 3 ) :)` - not valid, not actionable, and pointing away from the actual
+            // mistake. When the value is already a single expression, the words after it are what
+            // is wrong, so those get named instead.
+            if (args[0] is ExprArg)
             {
-                1 => args[0],
-                0 => throw Err(line, $"{what} is missing its value."),
-                _ => throw Err(line, $"{what} takes a single value; wrap the expression in parentheses, e.g. ({string.Join(" ", tokens.Select(t => t.Text))}).")
-            };
+                string extra = string.Join(" ", args.Skip(1).Select(Describe));
+                throw Err(line, $"{what} takes a single value; remove what follows the expression: `{extra}`.{ColonHint(extra)}");
+            }
+
+            throw Err(line, $"{what} takes a single value; wrap the expression in parentheses, e.g. ({string.Join(" ", tokens.Select(t => t.Text))}).");
         }
+
+        /// <summary>
+        /// A stray ':' at the end of a header line is Python muscle memory, and worth naming - the
+        /// generic "remove what follows" leaves someone wondering what the colon was supposed to be.
+        /// </summary>
+        private static string ColonHint(string extra)
+            => extra == ":" ? " EasyShell blocks are not colon-terminated; the block runs until END." : "";
+
+        /// <summary>An argument roughly as it was written, for a message that has to point at one.</summary>
+        private static string Describe(Arg arg) => arg switch
+        {
+            AtomArg a => a.WasQuoted ? $"\"{a.Text}\"" : a.Text,
+            VarRefArg v => "$" + v.Name,
+            ExprArg => "(...)",
+            _ => "?"
+        };
 
         private EasyShellException Err(int line, string msg)
         {

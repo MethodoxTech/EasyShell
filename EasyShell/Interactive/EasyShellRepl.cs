@@ -7,15 +7,12 @@ using System.Text;
 namespace EasyShell.Interactive
 {
     /// <summary>
-    /// A host built-in, tried before the engine sees the line. Return true when the input was
-    /// handled; set <paramref name="exitCode"/> to a value to leave the REPL with that code.
+    /// A host built-in, tried before the engine sees the line. Return true when the input was handled; set <paramref name="exitCode"/> to a value to leave the REPL with that code.
     /// </summary>
     public delegate bool ReplBuiltin(string input, EasyShellEngine engine, out int? exitCode);
 
     /// <summary>
-    /// Everything a host can vary about the prompt loop. The parts that are actually the same
-    /// for every host - block accumulation, error handling, result printing, `exit` codes - are
-    /// deliberately not on here.
+    /// Everything a host can vary about the prompt loop. The parts that are actually the same for every host - block accumulation, error handling, result printing, `exit` codes - are deliberately not on here.
     /// </summary>
     public sealed class ReplOptions
     {
@@ -44,28 +41,21 @@ namespace EasyShell.Interactive
         public Action<string>? WriteError { get; init; }
 
         /// <summary>
-        /// Run external programs in the foreground, on this terminal, rather than capturing them
-        /// through pipes - see <see cref="Executor.InteractiveVariable"/>. On by default, because a
-        /// REPL is by definition a person at a terminal.
+        /// Run external programs in the foreground, on this terminal, rather than capturing them through pipes - see <see cref="Executor.InteractiveVariable"/>. On by default, because a REPL is by definition a person at a terminal.
         /// </summary>
         public bool Interactive { get; init; } = true;
 
         /// <summary>
-        /// What Tab offers. Used only when the host's console also implements
-        /// <see cref="IShellLineInput"/>; without that there is no way to see a Tab key at all,
-        /// and the REPL reads whole lines as before.
+        /// What Tab offers. Used only when the host's console also implements <see cref="IShellLineInput"/>; without that there is no way to see a Tab key at all, and the REPL reads whole lines as before.
         /// </summary>
         public ICompletionSource? Completions { get; init; }
     }
 
     /// <summary>
-    /// The interactive prompt loop, shared rather than reimplemented.
+    /// The interactive prompt loop, containing shared logic by different potential hosts.
     ///
-    /// A host that wants an EasyShell prompt - the `easy` CLI, or HeadlessTerm's RetroShell - needs
-    /// its own banner, prompt and built-ins, and needs nothing else of its own: block depth
-    /// tracking, `exit` codes, error reporting and result printing are the same problem every time,
-    /// and a copy of them in each host is a copy that drifts. Those live here; the differences are
-    /// <see cref="ReplOptions"/>.
+    /// A host that wants an EasyShell prompt - the `easy` CLI, or HeadlessTerm's RetroShell - needs its own banner, prompt and built-ins, and needs nothing else of its own: block depth tracking, `exit` codes, error reporting and result printing are the same problem every time, and a copy of them in each host is a copy that drifts. 
+    /// Those live here; the differences are <see cref="ReplOptions"/>.
     /// </summary>
     public static class EasyShellRepl
     {
@@ -77,8 +67,7 @@ namespace EasyShell.Interactive
             if (options.Interactive)
                 rt.AssignOrDeclare(Executor.InteractiveVariable, new Value(ValueKind.Bool, true));
 
-            // All prompt I/O goes through the runtime's host, so the REPL follows the shell into
-            // a virtual machine (tty console) exactly as it runs on the real one (System.Console).
+            // All prompt I/O goes through the runtime's host, so the REPL follows the shell into a virtual machine (tty console) exactly as it runs on the real one (System.Console).
             Hosting.IShellConsole console = rt.Host.Console;
             Action<string> writeError = options.WriteError ?? console.WriteErrorLine;
             Func<string> prompt = options.Prompt ?? (() => "es> ");
@@ -86,8 +75,8 @@ namespace EasyShell.Interactive
 
             options.Banner?.Invoke();
 
-            // Line editing (and therefore Tab completion) needs keys, not lines. A host that can
-            // supply them gets the editor; every other host keeps the ReadLine path unchanged.
+            // Line editing (and therefore Tab completion) needs keys, not lines.
+            // A host that can supply them gets the editor; every other host keeps the ReadLine path unchanged.
             LineEditor? editor = console is IShellLineInput keys
                 ? new LineEditor(console, keys, options.Completions)
                 : null;
@@ -117,8 +106,7 @@ namespace EasyShell.Interactive
 
                 string trimmed = line.Trim();
 
-                // Host built-ins and REPL commands apply at the top level only: inside an open
-                // block every line is body text, including one that happens to read like a command.
+                // Host built-ins and REPL commands apply at the top level only: inside an open block every line is body text, including one that happens to read like a command.
                 if (openBlocks == 0)
                 {
                     if (trimmed.Length == 0) continue;
@@ -196,9 +184,7 @@ namespace EasyShell.Interactive
         }
 
         /// <summary>
-        /// Track IF/WHILE/FUNC ... END so a block can be typed across several lines. Comments are
-        /// stripped the same way the parser strips them, so a '#' inside a string is not mistaken
-        /// for one.
+        /// Track IF/WHILE/FUNC ... END so a block can be typed across several lines. Comments are stripped the same way the parser strips them, so a '#' inside a string is not mistaken for one.
         /// </summary>
         private static void UpdateBlockDepth(string trimmed, ref int openBlocks)
         {

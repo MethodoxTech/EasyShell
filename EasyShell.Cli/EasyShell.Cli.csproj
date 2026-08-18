@@ -9,7 +9,7 @@
     <AssemblyName>easy</AssemblyName>
     <AssemblyTitle>Easy Shell</AssemblyTitle>
     <ApplicationIcon>EasyShell.ico</ApplicationIcon>
-    <!--Depends on entire .Net runtime-->
+    <!--Depends on entire .Net runtime reflection-->
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 

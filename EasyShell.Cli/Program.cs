@@ -12,7 +12,7 @@ namespace EasyShell
         private const string Version = "0.2.0";
 
         private static readonly string HelpText = """
-            Easy Shell (easyshell) - a tiny scripting language.
+            Easy Shell (easy) - a tiny shell scripting language.
 
             Usage:
               easyshell <script.es>

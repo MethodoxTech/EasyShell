@@ -7,8 +7,8 @@ using System.Text;
 namespace EasyShell.Interactive
 {
     /// <summary>
-    /// A key a line editor understands. Deliberately smaller than ConsoleKey: a host that is not
-    /// a System.Console - a virtual terminal, a test - should not have to fabricate one.
+    /// A key a line editor understands. 
+    /// Deliberately smaller than ConsoleKey: a host that is not a System.Console - a virtual terminal, a test - should not have to fabricate one.
     /// </summary>
     public enum EditorKey
     {
@@ -21,10 +21,8 @@ namespace EasyShell.Interactive
     public readonly record struct EditorKeyPress(EditorKey Key, char Character);
 
     /// <summary>
-    /// A console that can also deliver individual keys, which is what line editing and tab
-    /// completion require. Optional: <see cref="IShellConsole"/> alone gives a working prompt
-    /// through <see cref="IShellConsole.ReadLine"/>, and the REPL falls back to it whenever the
-    /// host does not implement this - so a pipe, a script and a test all keep working.
+    /// A console that can also deliver individual keys, which is what line editing and tab completion require. 
+    /// Optional: <see cref="IShellConsole"/> alone gives a working prompt through <see cref="IShellConsole.ReadLine"/>, and the REPL falls back to it whenever the host does not implement this - so a pipe, a script and a test all keep working.
     /// </summary>
     public interface IShellLineInput
     {
@@ -40,14 +38,12 @@ namespace EasyShell.Interactive
     }
 
     /// <summary>
-    /// What Tab offers. The shell knows the language; the host knows the world - so completion
-    /// sources are supplied by the host and consulted by the editor.
+    /// What Tab offers. The shell knows the language; the host knows the world - so completion sources are supplied by the host and consulted by the editor.
     /// </summary>
     public interface ICompletionSource
     {
         /// <summary>
-        /// Candidates that could replace the word ending at <paramref name="caret"/>. Return the
-        /// FULL replacement words, not suffixes; the editor works out the common prefix.
+        /// Candidates that could replace the word ending at <paramref name="caret"/>. Return the FULL replacement words, not suffixes; the editor works out the common prefix.
         /// </summary>
         IReadOnlyList<string> Complete(string line, int caret);
     }
@@ -55,15 +51,9 @@ namespace EasyShell.Interactive
     /// <summary>
     /// The line editor: printable insertion, cursor motion, history, and Tab completion.
     ///
-    /// <para>It exists because <see cref="IShellConsole.ReadLine"/> hands over a finished line and
-    /// so can never implement Tab - by the time the shell sees the text, the Tab character is
-    /// already in it (which is exactly what a bare tab used to do: insert whitespace). Editing
-    /// therefore has to move up to where the language is understood, which is where every real
-    /// shell puts it - readline lives in bash, not in the kernel.</para>
+    /// <para>It exists because <see cref="IShellConsole.ReadLine"/> hands over a finished line and so can never implement Tab - by the time the shell sees the text, the Tab character is already in it. Editing therefore has to move up to where the language is understood, which is where every real shell puts it - readline lives in bash, not in the kernel.</para>
     ///
-    /// <para>Completion rules, chosen to match what people expect from bash: one candidate
-    /// completes it outright; several extend to the longest common prefix and then list; a common
-    /// prefix that adds nothing lists immediately.</para>
+    /// <para>Completion rules, chosen to match what people expect from bash: one candidate completes it outright; several extend to the longest common prefix and then list; a common prefix that adds nothing lists immediately.</para>
     /// </summary>
     public sealed class LineEditor
     {

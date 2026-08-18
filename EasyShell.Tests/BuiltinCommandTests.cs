@@ -40,6 +40,49 @@ namespace EasyShell.Tests
             Assert.Equal("build-42", ScriptHost.EvaluateText("""+ "build-" 42"""));
             Assert.Equal("11", ScriptHost.EvaluateText("""+ "10" 1"""));   // numeric strings still add up
         }
+
+        [Theory]
+        [InlineData("""- 10 "ten" """)]
+        [InlineData("""* "two" 3""")]
+        [InlineData("""/ "half" 2""")]
+        [InlineData("""% 7 "three" """)]
+        [InlineData("""^ 2 "ten" """)]
+        [InlineData("""- "abc" """)]                // unary minus is arithmetic too
+        public void EveryOperatorExceptPlusRefusesAnOperandThatIsNotANumber(string command)
+        {
+            // These used to coerce the operand to 0 and carry on, which is how a typo produced a
+            // confidently wrong number - and how `-= $a 1` looked like it worked before `-=` was
+            // a token. '+' is the deliberate exception: it concatenates instead.
+            EasyShellException e = Assert.Throws<EasyShellException>(() => ScriptHost.Evaluate(command));
+
+            Assert.Contains("expects numbers", e.Message);
+        }
+
+        [Fact]
+        public void TheRefusalNamesTheOperandThatWasNotANumber()
+        {
+            EasyShellException e = Assert.Throws<EasyShellException>(() => ScriptHost.Evaluate("""- 10 "ten" """));
+
+            Assert.Contains("'ten'", e.Message);
+        }
+
+        [Fact]
+        public void AnOperandWithNoTextIsDescribedRatherThanQuotedAsNothing()
+        {
+            // A command that produced nothing is the likeliest source of this, and "'' is not one"
+            // reads as though something were missing from the message itself.
+            EasyShellException e = Assert.Throws<EasyShellException>(() => ScriptHost.Evaluate("""- 10 "" """));
+
+            Assert.Contains("an empty value", e.Message);
+        }
+
+        [Fact]
+        public void NumericStringsAreStillNumbers()
+        {
+            // The guard rejects what cannot be a number, not what merely arrived as text - reading
+            // a count out of a file or an environment variable has to keep working.
+            Assert.Equal("9", ScriptHost.EvaluateText("""- "10" 1"""));
+        }
         #endregion
 
         #region Concatenation

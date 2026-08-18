@@ -389,18 +389,57 @@ namespace EasyShell
             if (OperatingSystem.IsWindows() && IsBatchScript(target))
             {
                 psi.FileName = Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe";
-                psi.ArgumentList.Add("/c");
-                psi.ArgumentList.Add(target);
+                psi.Arguments = BuildCommandProcessorArguments(target, args);
+                return;
             }
-            else
-                psi.FileName = target;
 
+            psi.FileName = target;
             foreach (string a in args)
                 psi.ArgumentList.Add(a);
         }
         private static bool IsBatchScript(string path)
             => path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
             || path.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// The tail of a `cmd.exe /c` invocation, which is not an argv and cannot be built like one.
+        ///
+        /// <para>ArgumentList joins with the ordinary Windows rule - quote an argument only when it
+        /// contains whitespace - and cmd.exe then applies its own, which counts quotes: with
+        /// exactly two on the line it keeps them, and with any other number it strips the first one
+        /// and the last one. So
+        /// <c>cmd /c "C:\Program Files\p\build.cmd" "a value"</c> arrived at the interpreter as
+        /// <c>C:\Program Files\p\build.cmd" "a value</c>, cmd tried to run <c>C:\Program</c>, and
+        /// the caller saw a batch script that "exited with code 1" having printed nothing at all.
+        /// Two things had to be true at once - a space in the script's path AND a space in one of
+        /// the arguments - which is how it survived every machine whose temp folder had neither.</para>
+        ///
+        /// <para>/S removes the counting entirely: it means "strip the first and last character if
+        /// the first is a quote", unconditionally. One outer pair wrapped around a command line we
+        /// quoted ourselves therefore reaches the interpreter exactly as written, however many
+        /// quotes are inside it.</para>
+        ///
+        /// <para>Out of reach from here, and left alone: <c>%VAR%</c> and delayed-expansion
+        /// <c>!VAR!</c> still expand inside those quotes, because cmd does that after we are gone.</para>
+        /// </summary>
+        internal static string BuildCommandProcessorArguments(string target, IEnumerable<string> args)
+        {
+            StringBuilder command = new();
+            command.Append(QuoteForCommandProcessor(target));
+            foreach (string argument in args)
+                command.Append(' ').Append(QuoteForCommandProcessor(argument));
+
+            return $"/s /c \"{command}\"";
+        }
+        /// <summary>
+        /// Quoting for cmd.exe: whitespace, and the characters it would otherwise read as
+        /// redirection or command chaining rather than as part of an argument.
+        /// </summary>
+        private static string QuoteForCommandProcessor(string value)
+            => value.Length != 0 && value.IndexOfAny(CommandProcessorSpecials) < 0
+                ? value
+                : '"' + value.Replace("\"", "\\\"") + '"';
+        private static readonly char[] CommandProcessorSpecials =
+            [' ', '\t', '"', '&', '|', '^', '<', '>', '(', ')'];
         /// <summary>
         /// Waits for the process to exit, and ONLY for that.
         ///

@@ -42,6 +42,44 @@ namespace EasyShell
         #region Command Mapping
         private static readonly HashSet<string> OperatorCmds =
             new(StringComparer.OrdinalIgnoreCase) { "+", "-", "*", "/", "%", "^" };
+        private static readonly HashSet<string> ComparisonCmds =
+            new(StringComparer.OrdinalIgnoreCase) { "==", "!=", ">", "<", ">=", "<=" };
+        private static readonly HashSet<string> ConcatCmds =
+            new(StringComparer.OrdinalIgnoreCase) { "||", "CONCAT", "APPEND" };
+        private static readonly HashSet<string> DeclarationCmds =
+            new(StringComparer.OrdinalIgnoreCase) { "INTVAR", "BOOLVAR", "STRINGVAR", "DOUBLEVAR", "HANDLEVAR" };
+        /// <summary>Recognized inline by <see cref="ExecuteCommand"/>, so listed here only for the completion view.</summary>
+        private static readonly HashSet<string> KeywordCmds =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "NOT", "AND", "OR", "XOR", "??", "?:",
+                "RUN", "CALL", "ASSERT", "RETURN", "EXIT",
+                "IF", "ELSEIF", "ELSE", "WHILE", "FUNC", "END",
+            };
+
+        /// <summary>
+        /// Every name the language itself answers to, for a host that needs to offer them - Tab
+        /// completion is the reason this exists. Assembled from the very tables the dispatcher
+        /// consults, so a command added to one of them appears here without a second edit, and the
+        /// block keywords are included because they are things you type at a prompt too.
+        ///
+        /// <para>Built on demand rather than in a field initializer: the tables it reads live in
+        /// several regions of this class, and static initializers run in declaration order.</para>
+        /// </summary>
+        public static IReadOnlyList<string> BuiltinCommandNames => _builtinCommandNames ??= BuildBuiltinCommandNames();
+        private static IReadOnlyList<string>? _builtinCommandNames;
+        private static IReadOnlyList<string> BuildBuiltinCommandNames()
+        {
+            SortedSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+            names.UnionWith(OperatorCmds);
+            names.UnionWith(ComparisonCmds);
+            names.UnionWith(ConcatCmds);
+            names.UnionWith(DeclarationCmds);
+            names.UnionWith(KeywordCmds);
+            names.UnionWith(HostBuiltins);
+            names.UnionWith(Aliases.Keys);
+            return [.. names];
+        }
         /// <summary>
         /// Reflection-backed aliases. Only names whose targets are PURE (no machine state) or
         /// deliberately host-only (zip) remain here; everything that touches filesystem, console,
@@ -261,6 +299,16 @@ namespace EasyShell
                 // silently produce 0. Use || when concatenation is what you always mean.
                 if (cmdName == "+" && !vs.All(IsNumeric))
                     return Concat(vs);
+
+                // Every remaining operator is arithmetic and nothing else, so an operand that is
+                // not a number is a mistake and gets said out loud. Coercing it to 0 instead is
+                // how `-= $a 1` used to look like it worked before `-=` was a token: the stray
+                // '=' became 0 and the subtraction went ahead. A shell that quietly invents an
+                // operand computes the wrong answer without ever admitting to it.
+                foreach (Value operand in vs)
+                    if (!IsNumeric(operand))
+                        throw new EasyShellException(
+                            $"{line}: {cmdName} expects numbers; {Describe(operand)} is not one.");
 
                 // unary minus: (- 5)
                 if (cmdName == "-" && vs.Count == 1)
@@ -681,18 +729,9 @@ namespace EasyShell
             // For shell ergonomics: empty string counts as "missing"
             return !string.IsNullOrEmpty(v.AsString());
         }
-        private static bool IsDeclarateTypedVariableCommand(string s) =>
-            s.Equals("INTVAR", StringComparison.OrdinalIgnoreCase) ||
-            s.Equals("BOOLVAR", StringComparison.OrdinalIgnoreCase) ||
-            s.Equals("STRINGVAR", StringComparison.OrdinalIgnoreCase) ||
-            s.Equals("DOUBLEVAR", StringComparison.OrdinalIgnoreCase) ||
-            s.Equals("HANDLEVAR", StringComparison.OrdinalIgnoreCase);
-        private static bool IsComparison(string s) =>
-            s is "==" or "!=" or ">" or "<" or ">=" or "<=";
-        private static bool IsConcat(string s) =>
-            s == "||" ||
-            s.Equals("CONCAT", StringComparison.OrdinalIgnoreCase) ||
-            s.Equals("APPEND", StringComparison.OrdinalIgnoreCase);
+        private static bool IsDeclarateTypedVariableCommand(string s) => DeclarationCmds.Contains(s);
+        private static bool IsComparison(string s) => ComparisonCmds.Contains(s);
+        private static bool IsConcat(string s) => ConcatCmds.Contains(s);
         private static Value Concat(List<Value> values)
             => new(ValueKind.String, string.Concat(values.Select(v => v.AsString())));
         /// <summary>
@@ -703,6 +742,12 @@ namespace EasyShell
             v.Kind is ValueKind.Int or ValueKind.Double or ValueKind.Bool ||
             (v.Kind == ValueKind.String &&
              double.TryParse(v.AsString(), NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+        /// <summary>An operand as a diagnostic should show it: quoted, or named when it has no text at all.</summary>
+        private static string Describe(Value v)
+        {
+            string text = v.Kind == ValueKind.Null ? string.Empty : v.AsString();
+            return string.IsNullOrEmpty(text) ? "an empty value" : $"'{text}'";
+        }
         private static bool Compare(string op, Value a, Value b)
         {
             // Prefer numeric if both look numeric-ish

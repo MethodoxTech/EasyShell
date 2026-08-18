@@ -1,16 +1,79 @@
+using EasyShell.Interactive;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
 namespace EasyShell.Hosting
 {
-    /// <summary>System.Console, verbatim.</summary>
-    public sealed class HostConsole : IShellConsole
+    /// <summary>
+    /// System.Console, verbatim - plus the key-at-a-time input that line editing and Tab
+    /// completion require, because the CLI is the one host whose terminal is the process's own.
+    /// </summary>
+    public sealed class HostConsole : IShellConsole, IShellLineInput
     {
         public void Write(string text) => Console.Write(text);
         public void WriteLine(string text) => Console.WriteLine(text);
         public void WriteErrorLine(string text) => Console.Error.WriteLine(text);
         public string? ReadLine() => Console.ReadLine();
+
+        #region Line input
+        /// <summary>
+        /// Only a person at a terminal can be sent keys. Piped input (`echo ... | easy --repl`),
+        /// a redirected run and a test harness all have to keep the whole-line path, so the check
+        /// is on the real handles rather than on <see cref="Console.In"/> - which a caller may
+        /// have swapped without the terminal having gone anywhere.
+        /// </summary>
+        public bool IsInteractive
+        {
+            get
+            {
+                try { return !Console.IsInputRedirected && !Console.IsOutputRedirected; }
+                catch (IOException) { return false; }   // no console attached at all
+            }
+        }
+
+        /// <summary>
+        /// The line discipline needs no help here: Console.ReadKey(intercept) already delivers
+        /// characters one at a time on every platform .NET supports, and on Unix it drives termios
+        /// itself for the duration of the call. The one thing that does have to change is Ctrl+C,
+        /// which otherwise kills the shell instead of reaching the editor as an interrupt - and it
+        /// must change back, because <see cref="ProcessInvoker.RunForeground"/> relies on the
+        /// ordinary handler while a child program owns the terminal.
+        /// </summary>
+        public void SetRawMode(bool raw)
+        {
+            try { Console.TreatControlCAsInput = raw; }
+            catch (IOException) { /* not a terminal; the editor will find that out on its first key */ }
+        }
+
+        public EditorKeyPress? ReadKey()
+        {
+            ConsoleKeyInfo key;
+            try { key = Console.ReadKey(intercept: true); }
+            catch (InvalidOperationException) { return null; }   // input is not a terminal after all
+
+            bool control = (key.Modifiers & ConsoleModifiers.Control) != 0;
+            if (control && key.Key == ConsoleKey.C) return new(EditorKey.Interrupt, '\0');
+            if (control && key.Key == ConsoleKey.D) return new(EditorKey.EndOfInput, '\0');
+
+            return key.Key switch
+            {
+                ConsoleKey.Enter => new(EditorKey.Enter, '\0'),
+                ConsoleKey.Tab => new(EditorKey.Tab, '\0'),
+                ConsoleKey.Backspace => new(EditorKey.Backspace, '\0'),
+                ConsoleKey.Delete => new(EditorKey.Delete, '\0'),
+                ConsoleKey.LeftArrow => new(EditorKey.Left, '\0'),
+                ConsoleKey.RightArrow => new(EditorKey.Right, '\0'),
+                ConsoleKey.Home => new(EditorKey.Home, '\0'),
+                ConsoleKey.End => new(EditorKey.End, '\0'),
+                ConsoleKey.UpArrow => new(EditorKey.Up, '\0'),
+                ConsoleKey.DownArrow => new(EditorKey.Down, '\0'),
+                // Anything else is text when it is printable, and dropped when it is not - a key
+                // with no mapping must never leave a control character in the line.
+                _ => new(EditorKey.Character, key.KeyChar >= ' ' ? key.KeyChar : '\0'),
+            };
+        }
+        #endregion
     }
 
     /// <summary>System.IO, verbatim - including the retrying deletes scripts rely on.</summary>

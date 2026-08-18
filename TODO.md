@@ -110,14 +110,26 @@ Issues:
       do. `ProcessInvoker` now starts the *resolved* path (CreateProcess appends ".exe" only to a
       name with no extension at all, so `python3.12` would be found and then fail to start), and
       runs a `.bat`/`.cmd` through `cmd.exe /c`, which CreateProcess cannot execute directly.
-      **Verified on Linux only** - the Windows half wants one run on a Windows machine.
+      **Verified on Linux only** - the Windows half wants one run on a Windows machine. That run
+      found the `/c` quoting bug (see the changelog); the command line is built explicitly under
+      `/S` now, and the probe folder has a space in its name so the argument tests cover it.
 - [x] `IF == $X 1` - the missing parentheses everyone writes at least once - came out of LINQ's
       `SingleOrDefault` as "Sequence contains more than one element" with no line number. It is a
-      script error naming the line and suggesting the parentheses.
+      script error naming the line and suggesting the parentheses. The suggestion is no longer
+      offered when the value IS already parenthesized (`while (< $a 3):` was answered with
+      `e.g. (( < $a 3 ) :)`); the leftover words are named instead.
 
 REPL:
 
-- [ ] Support tab-completion like most shells do.
+- [x] Support tab-completion like most shells do. The editor and completion plumbing already
+      existed; the CLI's console did not implement `IShellLineInput`, so the REPL read whole lines
+      and Tab went to the line discipline. `HostConsole` delivers keys now and
+      `ShellCompletionSource` supplies the candidates - built-ins, `$variables`, PATH programs,
+      and files around the working directory.
+- [ ] Completion does not understand quoting: a path with a space in it completes only from its
+      last space onwards, because `LineEditor.WordStart` splits on whitespace.
+- [ ] An empty word deliberately lists only the working directory. Offering every command and
+      every program on PATH would need bash's "display all N possibilities?" prompt first.
 
 Features:
 

@@ -10,6 +10,47 @@ namespace EasyShell.Tests
 {
     public class ProcessInvokerTests
     {
+        #region Windows command processor
+        // A .cmd/.bat is not an executable image, so it goes through `cmd.exe /c` - and cmd does
+        // not parse its tail the way an argv is parsed. These assert the command line built for
+        // it; it is pure string work, so they run everywhere rather than only on the platform
+        // where getting it wrong is fatal.
+
+        [Fact]
+        public void TheCommandProcessorLineIsWrappedInOneOuterQuotePair()
+        {
+            // With /S cmd strips exactly the first and last character when the first is a quote,
+            // which is the only rule that survives an arbitrary number of quotes inside.
+            string line = ProcessInvoker.BuildCommandProcessorArguments(@"C:\tools\build.cmd", []);
+
+            Assert.Equal("/s /c \"C:\\tools\\build.cmd\"", line);
+        }
+
+        [Fact]
+        public void APathWithASpaceAndAnArgumentWithASpaceBothSurvive()
+        {
+            // This is the combination that used to break. Four quote characters on the line meant
+            // cmd stopped preserving them and stripped the outermost pair instead, leaving
+            // `C:\Program Files\p\build.cmd" "a value` - so it ran `C:\Program`, printed nothing
+            // and exited 1, which read as the batch script itself having failed.
+            string line = ProcessInvoker.BuildCommandProcessorArguments(
+                @"C:\Program Files\p\build.cmd", ["--flag", "a value"]);
+
+            Assert.Equal("/s /c \"\"C:\\Program Files\\p\\build.cmd\" --flag \"a value\"\"", line);
+        }
+
+        [Fact]
+        public void ArgumentsCmdWouldReadAsRedirectionOrChainingAreQuoted()
+        {
+            // Unquoted, `&` would end the command and start another one.
+            string line = ProcessInvoker.BuildCommandProcessorArguments("build.cmd", ["a&b", "c|d", "plain"]);
+
+            Assert.Contains("\"a&b\"", line);
+            Assert.Contains("\"c|d\"", line);
+            Assert.Contains(" plain", line);   // nothing special in it, so nothing added to it
+        }
+        #endregion
+
         #region Capture
         [Fact]
         public void StdoutComesBackWithTheExitCode()

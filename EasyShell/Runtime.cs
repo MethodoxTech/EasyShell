@@ -114,6 +114,13 @@ namespace EasyShell
         #endregion
 
         #region Utilities
+        /// <summary>
+        /// The names currently bound, without their values. Tab completion wants exactly this and
+        /// nothing more, and asking <see cref="DumpVariables"/> instead would render every value -
+        /// including handles, whose ToString can be arbitrarily expensive.
+        /// </summary>
+        public IEnumerable<string> VariableNames => _vars.Values.Select(v => v.Name);
+
         public IEnumerable<(string Name, string Kind, string Value)> DumpVariables()
         {
             foreach (Variable? v in _vars.Values.OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase))

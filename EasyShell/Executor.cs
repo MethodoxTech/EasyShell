@@ -528,8 +528,9 @@ namespace EasyShell
         #region Host built-ins
         private static readonly HashSet<string> HostBuiltins = new(StringComparer.OrdinalIgnoreCase)
         {
-            "cd", "cwd", "resolve", "exists", "setenv", "getenv", "hasarg", "arg",
+            "cd", "cwd", "resolve", "exists", "setenv", "getenv", "hasarg", "arg", "argvalue",
             "mkdir", "remove", "rm", "removeall", "cp", "mv", "print", "rpl", "regrpl",
+            "prompt", "choose",
         };
 
         private static bool IsHostBuiltin(string cmdName) => HostBuiltins.Contains(cmdName);
@@ -587,6 +588,35 @@ namespace EasyShell
                     int index = args.Count > 0 ? args[0].AsInt() : throw new EasyShellException($"{line}: ARG expects an index.");
                     string value = index >= 0 && index < rt.ScriptArguments.Length ? rt.ScriptArguments[index] : string.Empty;
                     return new Value(ValueKind.String, value);
+                }
+                case "argvalue":
+                {
+                    // The value AFTER a named flag, e.g. `--channel Steam`. HASARG answers whether
+                    // a flag is present; this answers what followed it, which is what turns an
+                    // interactive prompt into an optional one for unattended runs.
+                    string flag = Arg(0, "a flag name");
+                    string fallback = args.Count > 1 ? args[1].AsString() : string.Empty;
+
+                    string[] scriptArgs = rt.ScriptArguments;
+                    for (int i = 0; i < scriptArgs.Length - 1; i++)
+                        if (string.Equals(scriptArgs[i], flag, StringComparison.OrdinalIgnoreCase))
+                            return new Value(ValueKind.String, scriptArgs[i + 1]);
+
+                    return new Value(ValueKind.String, fallback);
+                }
+                case "prompt":
+                {
+                    string message = Arg(0, "a message");
+                    string fallback = args.Count > 1 ? args[1].AsString() : string.Empty;
+                    return new Value(ValueKind.String, Hosting.ShellBuiltins.Prompt(host, message, fallback));
+                }
+                case "choose":
+                {
+                    if (args.Count < 2)
+                        throw new EasyShellException($"{line}: CHOOSE expects a message and at least one option.");
+                    string message = args[0].AsString();
+                    List<string> options = [.. args.Skip(1).Select(v => v.AsString())];
+                    return new Value(ValueKind.String, Hosting.ShellBuiltins.Choose(host, message, options));
                 }
                 case "mkdir":
                     host.FileSystem.CreateDirectory(host.FileSystem.GetFullPath(

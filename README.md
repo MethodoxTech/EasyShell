@@ -28,6 +28,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 ## Features
 
 * **Strongly typed variables** via `INT`, `BOOL`, `STRING`, `DOUBLE`, `HANDLE`
+* **Interactive prompts** - `PROMPT` and `CHOOSE`, with `ARGVALUE` to skip them unattended
 * **Case-insensitive variable names**
 * **Global scope** for all variables (no function parameters needed)
 * **Expressions** as parenthesized sub-commands: `(== $X 10)` or `(System.String.Format "x={0}" $X)`
@@ -319,6 +320,66 @@ print (arg 0)     # "--incremental"; an index that is not there reads as ""
 
 `HASARG` ignores case. `ARG` returns an empty string rather than failing when the index is out of
 range, so an optional argument needs no guard around it.
+
+`ARGVALUE <flag> [default]` reads the value that *follows* a named flag, which is the shape most
+build scripts actually want:
+
+```easy
+easy Publish.easy --channel Steam
+```
+
+```easy
+$Channel = (argvalue "--channel" "Steam")
+```
+
+A flag that is absent - or present with nothing after it - yields the default, so there is nothing
+to guard.
+
+### Asking the User
+
+* `PROMPT <message> [default]` - one line of free text
+* `CHOOSE <message> <option> [option...]` - a numbered menu
+
+```easy
+$Name = (prompt "Release name?" "Nightly")
+
+$Channel = (choose "Publish to which store?" "Steam" "Itch.io" "Mac App Store")
+print (|| "Building for " $Channel)
+```
+
+```
+Publish to which store?
+  1) Steam
+  2) Itch.io
+  3) Mac App Store
+Enter 1-3 or a name: 2
+Building for Itch.io
+```
+
+`CHOOSE` accepts the index, the full name (case-insensitively) or any **unambiguous** prefix, and
+asks again when it gets anything else. A prefix shared by two options is refused rather than
+resolved to whichever was listed first.
+
+The two differ deliberately in what they do when nobody is there to answer - a piped session, a CI
+job, a redirected stdin:
+
+| | End-of-input |
+| --- | --- |
+| `PROMPT` | Takes the default. An optional question should not stop an unattended run. |
+| `CHOOSE` | **Fails**, naming the options. |
+
+`CHOOSE` has no default on purpose. The question it exists for - which store is this build for -
+has no safe guess, and quietly picking the first option is how a Steam build ends up uploaded to
+Itch.io. Pair it with `ARGVALUE` to make the prompt the interactive fallback rather than the only
+path:
+
+```easy
+# Asks when run by hand; silent when run as `easy Publish.easy --channel Steam`
+$Channel = (?? (argvalue "--channel") (choose "Publish to which store?" "Steam" "Itch.io"))
+```
+
+Both are host-routed, so they follow a virtualized `ShellHost` into its own console like every
+other built-in.
 
 ### File System Commands
 
@@ -622,6 +683,11 @@ Then creates a package in:
     explicitly under `/S`
   * The "takes a single value" diagnostic no longer suggests re-wrapping an expression that is
     already parenthesized; it names the leftover words instead, and calls out a trailing `:`
+  * **Asking the user**: `PROMPT <message> [default]` and `CHOOSE <message> <option...>`, plus
+    `ARGVALUE <flag> [default]` for the value after a named flag. Both prompts are host-routed, so
+    they work inside a virtualized host. `CHOOSE` deliberately has no default and fails on
+    end-of-input rather than picking the first option - a publish script that guesses which store
+    it is building for is worse than one that stops
 
 ## License
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using EasyShell.Exceptions;
 
@@ -94,6 +95,89 @@ namespace EasyShell.Hosting
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// One line of free-text input, with the prompt written to the host console.
+        ///
+        /// End-of-input is not an error here: a piped or redirected session simply takes the
+        /// default, which is what lets a script that asks an optional question still run unattended.
+        /// <see cref="Choose"/> makes the opposite call, and says why.
+        /// </summary>
+        public static string Prompt(ShellHost host, string message, string fallback)
+        {
+            if (!string.IsNullOrEmpty(message))
+                host.Console.Write(message.EndsWith(' ') ? message : message + " ");
+
+            string? typed = host.Console.ReadLine();
+            return string.IsNullOrWhiteSpace(typed) ? fallback : typed.Trim();
+        }
+
+        /// <summary>
+        /// A numbered menu over <paramref name="options"/>, answered by index, by full name or by
+        /// any unambiguous prefix, and re-asked until one of those lands.
+        ///
+        /// Unlike <see cref="Prompt"/> there is deliberately no default. The question this exists
+        /// for - which store is this build for - has no safe guess: silently picking the first
+        /// option would let an unattended run upload a Steam build to Itch.io. So an empty answer
+        /// re-asks, and end-of-input fails with a message naming the options, which is a build that
+        /// stops rather than a build that goes to the wrong place.
+        /// </summary>
+        public static string Choose(ShellHost host, string message, IReadOnlyList<string> options)
+        {
+            if (options.Count == 0)
+                throw new EasyShellException("CHOOSE expects at least one option.");
+
+            if (!string.IsNullOrEmpty(message))
+                host.Console.WriteLine(message);
+            for (int i = 0; i < options.Count; i++)
+                host.Console.WriteLine($"  {i + 1}) {options[i]}");
+
+            while (true)
+            {
+                host.Console.Write($"Enter 1-{options.Count} or a name: ");
+
+                string? typed = host.Console.ReadLine();
+                if (typed is null)
+                    throw new EasyShellException(
+                        $"CHOOSE reached end-of-input with nothing chosen. This session is not interactive, " +
+                        $"so pass the answer as a script argument instead. Options were: {string.Join(", ", options)}.");
+
+                typed = typed.Trim();
+                if (typed.Length == 0)
+                    continue;
+
+                if (int.TryParse(typed, out int index) && index >= 1 && index <= options.Count)
+                    return options[index - 1];
+
+                string? resolved = ResolveOption(options, typed);
+                if (resolved is not null)
+                    return resolved;
+
+                host.Console.WriteErrorLine($"'{typed}' is not one of the options.");
+            }
+        }
+
+        /// <summary>
+        /// Exact match first, then a unique prefix. A prefix shared by two options is rejected
+        /// rather than resolved to whichever comes first.
+        /// </summary>
+        private static string? ResolveOption(IReadOnlyList<string> options, string typed)
+        {
+            foreach (string option in options)
+                if (string.Equals(option, typed, StringComparison.OrdinalIgnoreCase))
+                    return option;
+
+            string? candidate = null;
+            foreach (string option in options)
+            {
+                if (!option.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (candidate is not null)
+                    return null;
+                candidate = option;
+            }
+            return candidate;
         }
 
         public static void Replace(ShellHost host, string path, string source, string replacement)

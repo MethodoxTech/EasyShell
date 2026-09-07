@@ -1,9 +1,11 @@
 using EasyShell.Exceptions;
 using EasyShell.Types;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 
@@ -40,6 +42,42 @@ namespace EasyShell.Reflection
             int lastDot = fullyQualified.LastIndexOf('.');
             if (lastDot <= 0 || lastDot == fullyQualified.Length - 1) return false;
             return ResolveType(fullyQualified[..lastDot]) is not null;
+        }
+
+        /// <summary>
+        /// LOADASSEMBLY &lt;name-or-path&gt; -> the simple name of what was loaded.
+        ///
+        /// <para>Namespace probing covers the framework and well-behaved packages, but it can only
+        /// find assemblies whose name the type name predicts. A plugin DLL beside the script, or a
+        /// library whose assembly name shares nothing with its namespaces, needs to be named
+        /// outright - and a script that says so up front fails with "no such assembly" at the
+        /// point of the load, instead of a puzzling "type not found" much later.</para>
+        /// </summary>
+        public static string LoadAssembly(string nameOrPath)
+        {
+            if (string.IsNullOrWhiteSpace(nameOrPath))
+                throw new EasyShellException("LOADASSEMBLY expects an assembly name or a path to a .dll.");
+
+            Assembly loaded;
+            try
+            {
+                // A real file wins over a simple name: "./Plugins/Foo.dll" is unambiguous, and
+                // LoadFrom is the only way to reach an assembly outside the probing path.
+                loaded = File.Exists(nameOrPath)
+                    ? Assembly.LoadFrom(Path.GetFullPath(nameOrPath))
+                    : Assembly.Load(new AssemblyName(nameOrPath));
+            }
+            catch (Exception e)
+            {
+                throw new EasyShellException(
+                    $"Cannot load assembly '{nameOrPath}': {e.Message} " +
+                    "Give either an assembly name (System.Text.RegularExpressions) or a path to a .dll that exists.");
+            }
+
+            // A name that failed to probe before may well succeed now that something is loaded
+            // under it, so nothing stale is allowed to outlive an explicit load.
+            AssemblyProbeCache.Clear();
+            return loaded.GetName().Name ?? nameOrPath;
         }
 
         // Example: System.DateTime.Now                       (static property)
@@ -449,8 +487,57 @@ namespace EasyShell.Reflection
                 Type? t = asm.GetType(typeName, throwOnError: false, ignoreCase: true);
                 if (t is not null) return t;
             }
+
+            // Then the assembly the name itself implies. Assembly loading is lazy, so half the
+            // framework is simply not present in a fresh process: System.Text.RegularExpressions
+            // and System.Diagnostics.FileVersionInfo both live in assemblies nothing has touched
+            // yet, and a scan of what happens to be loaded therefore reported "type not found"
+            // for types that are perfectly available. The name is the map to its own assembly -
+            // walk the namespace back one segment at a time and ask for each candidate.
+            return ResolveFromProbableAssembly(typeName);
+        }
+
+        /// <summary>
+        /// For "System.Text.RegularExpressions.Regex", probes the assemblies
+        /// "System.Text.RegularExpressions", then "System.Text", then "System" - the convention
+        /// the framework itself follows, and the one NuGet packages overwhelmingly follow too.
+        /// </summary>
+        private static Type? ResolveFromProbableAssembly(string typeName)
+        {
+            for (int cut = typeName.LastIndexOf('.'); cut > 0; cut = typeName.LastIndexOf('.', cut - 1))
+            {
+                Type? found = ProbeAssembly(typeName[..cut])?
+                    .GetType(typeName, throwOnError: false, ignoreCase: true);
+                if (found is not null)
+                    return found;
+            }
             return null;
         }
+
+        /// <summary>
+        /// Loads an assembly by simple name, remembering the answer - including "no such assembly".
+        ///
+        /// <para>The cache is what makes probing affordable. A miss costs a thrown
+        /// FileNotFoundException, and command routing asks about every dotted name it sees -
+        /// `python3.12` and `vim.tiny` included - so without remembering the failures, every
+        /// mention of a program with a dot in its name would pay for the same exception again.</para>
+        /// </summary>
+        private static Assembly? ProbeAssembly(string simpleName)
+            => AssemblyProbeCache.GetOrAdd(simpleName, static name =>
+            {
+                try
+                {
+                    return Assembly.Load(new AssemblyName(name));
+                }
+                catch
+                {
+                    // Not an assembly - the overwhelmingly common case, since this is also asked
+                    // about ordinary program names. Absence is an answer, not an error.
+                    return null;
+                }
+            });
+        private static readonly ConcurrentDictionary<string, Assembly?> AssemblyProbeCache =
+            new(StringComparer.OrdinalIgnoreCase);
         #endregion
     }
 }

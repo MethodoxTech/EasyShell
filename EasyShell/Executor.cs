@@ -53,9 +53,17 @@ namespace EasyShell
             new(StringComparer.OrdinalIgnoreCase)
             {
                 "NOT", "AND", "OR", "XOR", "??", "?:",
-                "RUN", "CALL", "ASSERT", "RETURN", "EXIT",
+                "RUN", "CALL", "ASSERT", "RETURN", "EXIT", "LOADASSEMBLY",
                 "IF", "ELSEIF", "ELSE", "WHILE", "FUNC", "END",
             };
+
+        /// <summary>
+        /// The member name LOADASSEMBLY presents to <see cref="Hosting.ShellHost.CanInvokeQualified"/>.
+        /// Loading an assembly is not itself a member call, but it grants exactly the authority
+        /// that policy exists to govern, so it is checked against the same predicate rather than
+        /// quietly bypassing it.
+        /// </summary>
+        private const string AssemblyLoadPolicyName = "System.Reflection.Assembly.Load";
 
         /// <summary>
         /// Every name the language itself answers to, for a host that needs to offer them - Tab
@@ -427,6 +435,29 @@ namespace EasyShell
                     : "Assertion failed.";
 
                 throw new EasyShellException($"{line}: ASSERT failed: {msg}");
+            }
+
+            // Built-in: LOADASSEMBLY <name-or-path>
+            if (cmdName.Equals("LOADASSEMBLY", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Count < 2)
+                    throw new EasyShellException($"{line}: LOADASSEMBLY expects an assembly name or a path to a .dll.");
+
+                string assemblyRef = EvaluateArg(rt, args[1]).AsString();
+
+                // Bringing code in is the same authority as calling it, so it answers to the same
+                // switch a sandboxing host already sets for reflection.
+                if (rt.Host.CanInvokeQualified is { } permits && !permits(AssemblyLoadPolicyName))
+                    throw new EasyShellException($"{line}: Loading assemblies is not permitted here.");
+
+                try
+                {
+                    return new Value(ValueKind.String, ReflectionInvoker.LoadAssembly(assemblyRef));
+                }
+                catch (EasyShellException e)
+                {
+                    throw new EasyShellException($"{line}: {e.Message}");
+                }
             }
 
             // Built-in: return (function-only)

@@ -1,58 +1,77 @@
 # A script to build Easy Shell with dotnet for publish
 # To build with this script: easy "BuildEasyShell.easy"
 # There is no need to set working directory etc.
-
-# Retrieve current script location
-$PrevPath = (cwd)
+#
+# BuildEasyShell.ps1 does the same job for a machine that has no `easy` yet. The two are meant to
+# stay behaviourally identical; when you change one, change the other.
+#
+# Pass --skip-tests when you know what you are doing: easy BuildEasyShell.easy --skip-tests
 
 # Start
 print "Publish for Final Packaging build."
 
-# Determine publish folder
-cd $EasyScriptRoot
-stringvar PublishFolder (JoinPath $EasyScriptRoot "\..\..\..\Publish\Utilities\EasyShell\Current")
+# A hung restore or test run should fail the build, not occupy the agent forever.
+INTVAR EasyProcessTimeoutSeconds 1800
+
+# Paths. RESOLVE collapses the ".." segments, so comparisons and messages below read cleanly.
+# Project and tests sit beside this script's folder; only the shared output tree is repo-relative,
+# so EasyShell keeps building if it is ever vendored at a different depth.
+$EasyShellRoot = (resolve (JoinPath $EasyScriptRoot ".."))
+$RepoRoot      = (resolve (JoinPath $EasyShellRoot ".." ".."))
+$ProjectPath   = (JoinPath $EasyShellRoot "EasyShell.Cli")
+$TestsPath     = (JoinPath $EasyShellRoot "EasyShell.Tests")
+stringvar PublishFolder (JoinPath $RepoRoot "Publish" "Utilities" "EasyShell" "Current")
+$ArchiveFolder = (JoinPath $RepoRoot "Publish" "Packages")
+
+# The RID the runtime reports for this machine. Passed explicitly to `dotnet publish` AND used to
+# name the package, so the two can never disagree - which guessing from pointer size does on arm64.
+$Rid = (System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)
+print (|| "Target runtime: " $Rid " (Release)")
 
 # Do not publish something that does not pass its own tests.
-# Pass --skip-tests when you know what you are doing: easy BuildEasyShell.easy --skip-tests
 IF (NOT (hasarg "--skip-tests"))
     print "Running unit tests."
-    dotnet test (JoinPath $EasyScriptRoot "\..\EasyShell.Tests") --nologo
+    dotnet test $TestsPath --configuration Release --nologo
+END
+
+# Refuse to delete the interpreter that is running this build. `easy` is normally installed from
+# this very folder, so a self-hosted build would otherwise try to delete its own running exe -
+# which on Windows fails partway through, leaving the publish folder half emptied.
+$RunningProcess = (System.Environment.ProcessPath)
+IF (EXISTS $RunningProcess)
+    $RunningUpper = (System.String.ToUpperInvariant (resolve $RunningProcess))
+    $PublishUpper = (System.String.ToUpperInvariant $PublishFolder)
+    assert (NOT (System.String.StartsWith $RunningUpper $PublishUpper)) (|| "Refusing to overwrite " $PublishFolder ": the running interpreter (" $RunningProcess ") lives inside it. Run this build with an `easy` located elsewhere.")
 END
 
 # Delete current data
 remove $PublishFolder
 
 # Publish Executable
-dotnet publish (JoinPath $EasyScriptRoot "\..\..\..\External\EasyShell\EasyShell.Cli") --use-current-runtime --self-contained --output $PublishFolder
+dotnet publish $ProjectPath --runtime $Rid --self-contained --configuration Release --output $PublishFolder
 
-# Validation
-assert (EXISTS (JoinPath $PublishFolder "easy.pdb")) "Build failed."
-
-# Pick an OS tag
+# Validation. The executable is the deliverable; a PDB only ever was a proxy for one.
+$ExecutableName = "easy"
 IF $IsWindows
-    stringvar OS "win"
-ELSEIF $IsLinux
-    stringvar OS "linux"
-ELSEIF $IsMacOS
-    stringvar OS "osx"
-ELSE
-    stringvar OS "unknown"
+    $ExecutableName = "easy.exe"
 END
+$ExecutablePath = (JoinPath $PublishFolder $ExecutableName)
+assert (EXISTS $ExecutablePath) (|| "Build failed. Missing executable: " $ExecutablePath)
 
-# Pick an architecture
-# Alternative: stringvar Arch (?: (System.Environment.Is64BitProcess) "x64" "x86")
-IF (System.Environment.Is64BitProcess)
-    stringvar Arch "x64"
-ELSE
-    stringvar Arch "x86"
-END
+# Smoke test: a self-contained layout can be complete on disk and still not start. Asking the fresh
+# binary for its own version proves it runs and yields the number the package is named after; a
+# non-zero exit code from it aborts the build on the spot.
+$Version = ($ExecutablePath --version)
+print (|| "Smoke test passed, version " $Version ".")
 
-# Runtime name, e.g. "win-x64"
-$rid = (format "{0}-{1}" $OS $Arch)
+# Strip development-only files from the package
+removeall $PublishFolder "*.pdb"
+removeall $PublishFolder "*.xml"
 
-# Create archive
+# Create archive. Version and date together, so two builds of one day stay distinguishable.
 $Date = (format "{0:yyyyMMdd}" (GetDate))
-$ArchiveFolder = (JoinPath $EasyScriptRoot "\..\..\..\Publish\Packages")
-$ArchivePath = (JoinPath $ArchiveFolder (format "\Utility_EasyShell_{0}_B{1}.zip" $rid $date))
+$ArchivePath = (JoinPath $ArchiveFolder (|| "Utility_EasyShell_" $Rid "_v" $Version "_B" $Date ".zip"))
 mkdir $ArchiveFolder
 zip $PublishFolder $ArchivePath
+
+print (|| "Created package: " $ArchivePath)

@@ -118,6 +118,18 @@ namespace EasyShell
               System.DateTime.Year $When          # instance property - $When is the target
               CALL $When ToString "yyyyMMdd"      # instance call on a handle
 
+              The assembly a type lives in is loaded on demand, so types the process has not
+              touched yet are still reachable:
+                System.Text.RegularExpressions.Regex.IsMatch $Text "^v[0-9]"
+                System.Diagnostics.FileVersionInfo.GetVersionInfo $Exe
+
+              LOADASSEMBLY <name-or-path>
+                Loads an assembly outright and answers with its simple name. Needed only when
+                the type name does not predict its assembly - a plugin DLL beside the script,
+                or a library whose assembly name shares nothing with its namespaces:
+                  LOADASSEMBLY "System.Text.Json"
+                  LOADASSEMBLY "./Plugins/Contoso.Tooling.dll"
+
             External programs:
               A command that is not built-in is run as an external program. Its output is
               streamed live when used as a statement, or captured as a string when used as

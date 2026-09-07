@@ -2,8 +2,7 @@
 # To build with this script: easy "BuildEasyShell.easy"
 # There is no need to set working directory etc.
 #
-# BuildEasyShell.ps1 does the same job for a machine that has no `easy` yet. The two are meant to
-# stay behaviourally identical; when you change one, change the other.
+# BuildEasyShell.ps1 does the same job for a machine that has no `easy` yet. The two are meant to stay behaviourally identical; when you change one, change the other.
 #
 # Pass --skip-tests when you know what you are doing: easy BuildEasyShell.easy --skip-tests
 
@@ -23,8 +22,7 @@ $TestsPath     = (JoinPath $EasyShellRoot "EasyShell.Tests")
 stringvar PublishFolder (JoinPath $RepoRoot "Publish" "Utilities" "EasyShell" "Current")
 $ArchiveFolder = (JoinPath $RepoRoot "Publish" "Packages")
 
-# The RID the runtime reports for this machine. Passed explicitly to `dotnet publish` AND used to
-# name the package, so the two can never disagree - which guessing from pointer size does on arm64.
+# The RID the runtime reports for this machine. Passed explicitly to `dotnet publish` AND used to name the package, so the two can never disagree - which guessing from pointer size does on arm64.
 $Rid = (System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)
 print (|| "Target runtime: " $Rid " (Release)")
 
@@ -34,9 +32,7 @@ IF (NOT (hasarg "--skip-tests"))
     dotnet test $TestsPath --configuration Release --nologo
 END
 
-# Refuse to delete the interpreter that is running this build. `easy` is normally installed from
-# this very folder, so a self-hosted build would otherwise try to delete its own running exe -
-# which on Windows fails partway through, leaving the publish folder half emptied.
+# Refuse to delete the interpreter that is running this build. `easy` is normally installed from this very folder, so a self-hosted build would otherwise try to delete its own running exe - which on Windows fails partway through, leaving the publish folder half emptied.
 $RunningProcess = (System.Environment.ProcessPath)
 IF (EXISTS $RunningProcess)
     $RunningUpper = (System.String.ToUpperInvariant (resolve $RunningProcess))
@@ -58,9 +54,7 @@ END
 $ExecutablePath = (JoinPath $PublishFolder $ExecutableName)
 assert (EXISTS $ExecutablePath) (|| "Build failed. Missing executable: " $ExecutablePath)
 
-# Smoke test: a self-contained layout can be complete on disk and still not start. Asking the fresh
-# binary for its own version proves it runs and yields the number the package is named after; a
-# non-zero exit code from it aborts the build on the spot.
+# Smoke test: a self-contained layout can be complete on disk and still not start. Asking the fresh binary for its own version proves it runs and yields the number the package is named after; a non-zero exit code from it aborts the build on the spot.
 $Version = ($ExecutablePath --version)
 print (|| "Smoke test passed, version " $Version ".")
 

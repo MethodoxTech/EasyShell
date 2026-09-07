@@ -33,8 +33,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-# Decide failure by exit code alone. Otherwise a tool that merely writes a warning to stderr can
-# abort the build on PowerShell versions where this preference defaults on.
+# Decide failure by exit code alone. Otherwise a tool that merely writes a warning to stderr can abort the build on PowerShell versions where this preference defaults on.
 $PSNativeCommandUseErrorActionPreference = $false
 
 #region Helpers
@@ -155,8 +154,7 @@ if (-not $SkipTests) {
     Invoke-Native dotnet @('test', $TestsPath, '--configuration', $Configuration, '--nologo') 'Unit tests'
 }
 
-# Refuse to delete the interpreter that is running this build. Only a concern once `easy` has been
-# installed from this very folder, which is exactly the steady state on a developer machine.
+# Refuse to delete the interpreter that is running this build. Only a concern once `easy` has been installed from this very folder, which is exactly the steady state on a developer machine.
 $RunningHost = [System.Environment]::ProcessPath
 if ($RunningHost -and (Test-Path -LiteralPath $PublishFolder)) {
     $PublishFull = (Get-Item -LiteralPath $PublishFolder).FullName

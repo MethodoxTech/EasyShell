@@ -15,10 +15,10 @@ namespace EasyShell
             Easy Shell (easy) - a tiny shell scripting language.
 
             Usage:
-              easyshell <script.es>
-              easyshell --help
-              easyshell --version
-              easyshell --repl
+              easy <script.es>
+              easy --help
+              easy --version
+              easy --repl
 
             REPL:
               - Type commands line by line.

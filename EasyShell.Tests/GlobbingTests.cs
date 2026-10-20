@@ -180,8 +180,7 @@ namespace EasyShell.Tests
         [Fact]
         public void MultiplicationIsStillMultiplication()
         {
-            // Files in the working directory are exactly what would make `*` expand if the rule
-            // were wrong; there are four of them here.
+            // Files in the working directory are exactly what would make `*` expand if the rule were wrong; there are four of them here.
             var (rt, _, console, _) = Home();
             new EasyShellEngine(rt).Run("""
                 print (* 2 3)
@@ -197,8 +196,7 @@ namespace EasyShell.Tests
         [Fact]
         public void LanguageCommandsGetTheirWordsVerbatim()
         {
-            // print, removeall and the comparisons take values, not file lists. removeall in
-            // particular has always taken its pattern unquoted, and must keep meaning the pattern.
+            // print, removeall and the comparisons take values, not file lists. removeall in particular has always taken its pattern unquoted, and must keep meaning the pattern.
             var (rt, fs, console, _) = Home();
             new EasyShellEngine(rt).Run("""
                 print *

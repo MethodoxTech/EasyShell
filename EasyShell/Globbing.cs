@@ -38,8 +38,7 @@ namespace EasyShell
 
             List<(string Text, string Separator)> segments = Split(word, BackslashSeparates(fileSystem));
 
-            // Each candidate is the text the user would have typed to name it: literal segments
-            // verbatim, pattern segments replaced by what was found.
+            // Each candidate is the text the user would have typed to name it: literal segments verbatim, pattern segments replaced by what was found.
             List<string> candidates = [""];
             bool lastWasPattern = false;
             for (int i = 0; i < segments.Count; i++)
@@ -56,8 +55,7 @@ namespace EasyShell
                 }
                 else
                 {
-                    // Only a directory can have something after it, and a trailing separator
-                    // (`pets/*/`) asks for directories by name.
+                    // Only a directory can have something after it, and a trailing separator (`pets/*/`) asks for directories by name.
                     bool directoriesOnly = !isLast || separator.Length > 0;
                     foreach (string prefix in candidates)
                         foreach (string name in ListNames(fileSystem, prefix.Length == 0 ? "." : prefix, directoriesOnly))
@@ -87,8 +85,7 @@ namespace EasyShell
             if (name.Length > 0 && name[0] == '.' && (pattern.Length == 0 || pattern[0] != '.'))
                 return false;
 
-            // Iterative match with one backtrack point: the most recent '*' absorbs one more
-            // character each time the rest fails, which is linear-ish rather than exponential.
+            // Iterative match with one backtrack point: the most recent '*' absorbs one more character each time the rest fails, which is linear-ish rather than exponential.
             int p = 0, n = 0, starP = -1, starN = 0;
             while (n < name.Length)
             {

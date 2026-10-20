@@ -17,7 +17,7 @@ namespace EasyShell.Tests
     {
         #region Fake world
         /// <summary>A '/'-separated in-memory filesystem - deliberately NOT host conventions.</summary>
-        private sealed class FakeFileSystem : IShellFileSystem
+        internal sealed class FakeFileSystem : IShellFileSystem
         {
             public readonly Dictionary<string, string> Files = new(StringComparer.Ordinal);
             public readonly HashSet<string> Directories = new(StringComparer.Ordinal) { "/" };
@@ -112,7 +112,7 @@ namespace EasyShell.Tests
             }
         }
 
-        private sealed class FakeConsole : IShellConsole
+        internal sealed class FakeConsole : IShellConsole
         {
             public readonly List<string> Output = new();
             public readonly List<string> Errors = new();
@@ -123,7 +123,7 @@ namespace EasyShell.Tests
             public string? ReadLine() => Input.Count > 0 ? Input.Dequeue() : null;
         }
 
-        private sealed class FakeEnvironment : IShellEnvironment
+        internal sealed class FakeEnvironment : IShellEnvironment
         {
             public readonly Dictionary<string, string> Variables = new(StringComparer.OrdinalIgnoreCase);
             public string CurrentDirectory { get; set; } = "/";
@@ -136,7 +136,7 @@ namespace EasyShell.Tests
             public string ExpandVariables(string text) => text;
         }
 
-        private sealed class FakeProcessRunner : IShellProcessRunner
+        internal sealed class FakeProcessRunner : IShellProcessRunner
         {
             public readonly List<string> Invocations = new();
             public readonly HashSet<string> KnownPrograms = new(StringComparer.Ordinal);
@@ -161,7 +161,7 @@ namespace EasyShell.Tests
             }
         }
 
-        private static (Runtime Runtime, FakeFileSystem Fs, FakeConsole Console, FakeEnvironment Env, FakeProcessRunner Procs)
+        internal static (Runtime Runtime, FakeFileSystem Fs, FakeConsole Console, FakeEnvironment Env, FakeProcessRunner Procs)
             CreateWorld(Func<string, bool>? reflectionPolicy = null)
         {
             FakeFileSystem fs = new();

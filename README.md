@@ -48,6 +48,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 * **A line-editing prompt** with history, cursor motion and Tab completion
 * **Script arguments** via `HASARG` / `ARG` and `$EasyArgs`
 * **File system commands** including `REMOVEALL` for deleting by wildcard
+* **Wildcards** - `cat pets/*`, `ls docs/*/notes*.txt`: unquoted program arguments expand to the files they match
 * **Comments** with `#`
 
 ## Repository Layout
@@ -402,6 +403,26 @@ Directories are never matched, so a pattern like `*` cannot quietly take a folde
 folder that does not exist deletes nothing rather than failing - it is already in the state the
 caller asked for.
 
+### Wildcards
+
+An unquoted word with `*`, `?` or `[...]` in it, given to a program, becomes the list of paths it matches - the same pathname expansion every shell does:
+
+```easy
+cat pets/*                 # cat pets/cat.txt pets/dog.txt
+ls docs/*/notes*.txt       # a pattern can sit in any segment of a path
+wc -l chapter[1-3].md      # [abc], [a-z], and [!a-z] or [^a-z] for "not these"
+echo "*"                   # quoted: a star, never a file list
+```
+
+* `*` matches any run of characters within one name, `?` exactly one, and `[...]` one of a set; none of them crosses a `/`.
+* A name that starts with `.` is matched only by a pattern that starts with `.` too, so `*` leaves hidden files alone and `.*` asks for them.
+* Matches are sorted (ordinally, so the order is the same on every machine), and the parts of the path you typed literally come back exactly as you typed them.
+* A pattern that matches nothing is passed on unchanged, so `cat x*` has `cat` report the missing file in its own words, rather than running `cat` with no arguments to sit waiting on its input.
+
+The rule for *when* a word expands is one sentence: **only an argument to a program, only in non-head position, and only unquoted.** It is the pipe rule with one more clause, and the extra clause is what keeps the rest of the language as it was. `*` is also the multiplication command, and `(* 2 3)` is still 6 - the `*` there is the head, and an operator is not a program. Arithmetic, comparisons, declarations, keywords, functions, .NET calls and the built-ins (`print`, `rm`, `cp`, `removeall` and the rest) take their words verbatim, because their arguments are values rather than file lists: `removeall $Folder *.xml` means the pattern, as it always has, not whatever the working directory happens to hold. A `$variable` or a `(sub-expression)` is never expanded either, because its value was not typed as a pattern. `RUN <program> <args...>` and every stage of a pipeline are programs, so their arguments do expand.
+
+Expansion looks through the host's filesystem, so `easy` expands against the real disk and an embedded shell - a virtual machine's prompt - against its own.
+
 ### Control Flow
 
 #### IF / ELSEIF / ELSE / END
@@ -688,6 +709,7 @@ Then creates a package in:
     they work inside a virtualized host. `CHOOSE` deliberately has no default and fails on
     end-of-input rather than picking the first option - a publish script that guesses which store
     it is building for is worse than one that stops
+  * **Wildcards**: `*`, `?` and `[...]` in an unquoted program argument expand to the matching paths, sorted, through the host's filesystem - so `cat pets/*` works at `easy`'s prompt and inside a virtual machine alike, where it used to hand `cat` the literal `pets/*`. Only program arguments expand: `(* 2 3)`, `removeall $dir *.xml` and every other language command see their words exactly as before. Hidden names need a pattern starting with `.`, and a pattern that matches nothing is passed on as typed, as in POSIX
 
 ## License
 

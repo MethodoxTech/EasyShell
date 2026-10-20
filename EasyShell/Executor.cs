@@ -217,8 +217,8 @@ namespace EasyShell
             // here and real programs on PATH, so without RUN an alias shadows its program forever.
             if (cmdName.Equals("RUN", StringComparison.OrdinalIgnoreCase) && args.Count >= 2)
             {
-                List<string> runArgs = [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())];
-                return ExecuteExternal(rt, runArgs[0], runArgs.GetRange(1, runArgs.Count - 1), line, statementContext);
+                string program = EvaluateArg(rt, args[1]).AsString();
+                return ExecuteExternal(rt, program, ProgramArguments(rt, args.Skip(2)), line, statementContext);
             }
 
             // Host-routed built-ins: filesystem, console, environment, working directory.
@@ -491,9 +491,29 @@ namespace EasyShell
                 return InvokeQualified(rt, cmdName, EvalArgs(rt, args.Skip(1)), line);
 
             // External executable
-            return ExecuteExternal(rt, cmdName,
-                                   [.. EvalArgs(rt, args.Skip(1)).Select(v => v.AsString())],
-                                   line, statementContext);
+            return ExecuteExternal(rt, cmdName, ProgramArguments(rt, args.Skip(1)), line, statementContext);
+        }
+
+        /// <summary>
+        /// The argument vector for an external program, with wildcards expanded: every unquoted literal word that is a pattern and matches something becomes the sorted list of what it matched; everything else is evaluated as usual. Only program arguments come through here - see <see cref="Globbing"/> for why language commands never do - and a variable or an expression is never expanded, because its value was not typed as a pattern.
+        /// </summary>
+        internal static List<string> ProgramArguments(Runtime rt, IEnumerable<Arg> args)
+        {
+            List<string> result = [];
+            foreach (Arg arg in args)
+            {
+                if (arg is AtomArg { WasQuoted: false } word)
+                {
+                    List<string> matches = Globbing.Expand(rt.Host.FileSystem, word.Text);
+                    if (matches.Count > 0)
+                    {
+                        result.AddRange(matches);
+                        continue;
+                    }
+                }
+                result.Add(EvaluateArg(rt, arg).AsString());
+            }
+            return result;
         }
 
         /// <summary>

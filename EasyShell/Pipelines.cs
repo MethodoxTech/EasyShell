@@ -168,8 +168,7 @@ namespace EasyShell
 
             if (!string.IsNullOrWhiteSpace(name) && rt.Host.Processes.Resolve(name) is not null)
             {
-                List<string> arguments = stage.Args.Skip(1)
-                    .Select(a => Executor.EvaluateArg(rt, a).AsString()).ToList();
+                List<string> arguments = Executor.ProgramArguments(rt, stage.Args.Skip(1));
 
                 ProcessInvoker.ProcessResult result;
                 try

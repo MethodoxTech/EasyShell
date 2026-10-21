@@ -9,9 +9,14 @@
     <AssemblyName>easy</AssemblyName>
     <AssemblyTitle>Easy Shell</AssemblyTitle>
     <ApplicationIcon>EasyShell.ico</ApplicationIcon>
-    <!--Depends on entire .Net runtime reflection-->
-    <IsAotCompatible>false</IsAotCompatible>
+    <!--Publishes with NativeAOT (dotnet publish -r <rid> -p:PublishAot=true), calling .NET through the curated Standard library instead of reflection.-->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(PublishAot)' == 'true' or '$(PublishTrimmed)' == 'true'">
+    <!--Folds ShellLibraries.IsReflectionSupported to false, so the reflective library is removed from the binary rather than merely never called.-->
+    <RuntimeHostConfigurationOption Include="EasyShell.Reflection.IsSupported" Value="false" Trim="true" />
+  </ItemGroup>
 
   <ItemGroup>
     <Content Include="EasyShell.ico" />

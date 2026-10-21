@@ -43,6 +43,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * Static: `System.IO.File.WriteAllText "path" "content"`
   * Instance: `System.DateTime.AddDays $Now 15` (first argument is the target)
   * Instance on a handle: `CALL $handle MethodName [args...]`
+  * Under NativeAOT, or in a sandbox, through a curated library bound at compile time instead - see [Docs/NativeAOT.md](Docs/NativeAOT.md)
 * **External process execution** for non-keyword, non-qualified commands, captured in scripts
   and run in the foreground at an interactive prompt
 * **A line-editing prompt** with history, cursor motion and Tab completion
@@ -57,6 +58,8 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
 |---|---|
 | `EasyShell/` | The library: parser, runtime, executor, reflection, process invocation, terminal state, and the shared interactive prompt loop under `Interactive/`. |
 | `EasyShell.Cli/` | The `easy` executable - argument handling and the help text, and nothing else. |
+| `EasyShell.Generators/` | The source generator that turns `[assembly: ShellBindType(typeof(T))]` into a curated library of direct calls, which is how `easy` calls .NET under NativeAOT. It runs inside the compiler and ships nothing. |
+| `Docs/` | Design notes: [NativeAOT.md](Docs/NativeAOT.md). |
 | `EasyShell.Tests/` | The unit tests. See [Testing](#testing). |
 
 The library has no dependencies beyond the .NET runtime, and that is a constraint worth keeping:
@@ -583,6 +586,12 @@ Or using `dotnet`:
 dotnet run -- ./BuildScripts/BuildEasyShell.easy
 ```
 
+As a single native executable, which calls .NET through the curated Standard library rather than by reflection (see [Docs/NativeAOT.md](Docs/NativeAOT.md)):
+
+```powershell
+dotnet publish EasyShell.Cli -c Release -r win-x64 -p:PublishAot=true
+```
+
 Expected folder structure:
 
 ```txt
@@ -594,6 +603,8 @@ Expected folder structure:
 │     │  └─ BuildEasyShell.ps1
 │     ├─ EasyShell/              # the library - engine, parser, runtime, process invocation
 │     │  └─ EasyShell.csproj
+│     ├─ EasyShell.Generators/   # the binding generator for curated libraries
+│     │  └─ EasyShell.Generators.csproj
 │     ├─ EasyShell.Cli/          # the `easy` executable
 │     │  └─ EasyShell.Cli.csproj
 │     ├─ EasyShell.Tests/        # the unit tests
@@ -710,6 +721,7 @@ Then creates a package in:
     end-of-input rather than picking the first option - a publish script that guesses which store
     it is building for is worse than one that stops
   * **Wildcards**: `*`, `?` and `[...]` in an unquoted program argument expand to the matching paths, sorted, through the host's filesystem - so `cat pets/*` works at `easy`'s prompt and inside a virtual machine alike, where it used to hand `cat` the literal `pets/*`. Only program arguments expand: `(* 2 3)`, `removeall $dir *.xml` and every other language command see their words exactly as before. Hidden names need a pattern starting with `.`, and a pattern that matches nothing is passed on as typed, as in POSIX
+  * **NativeAOT.** A script's .NET calls go through its host's `ShellHost.Library`: the whole runtime by reflection where that works, or a curated library whose members `EasyShell.Generators` bound at compile time. A NativeAOT `easy` used to build with nine trim warnings and then fail every .NET call at run time, because the trimmer kept nothing a script names only by string; it now publishes with none and calls the Standard library (Pure and Machine, 25 types). The binder's rules are shared by both libraries and a parity test holds them to the same results; under the JIT nothing changes. See [Docs/NativeAOT.md](Docs/NativeAOT.md)
 
 ## License
 

@@ -1,6 +1,6 @@
-﻿using EasyShell.Exceptions;
+﻿using EasyShell.Binding;
+using EasyShell.Exceptions;
 using EasyShell.Parsing;
-using EasyShell.Reflection;
 using EasyShell.Types;
 using System;
 using System.Collections.Generic;
@@ -452,7 +452,7 @@ namespace EasyShell
 
                 try
                 {
-                    return new Value(ValueKind.String, ReflectionInvoker.LoadAssembly(assemblyRef));
+                    return new Value(ValueKind.String, rt.Host.Library.LoadAssembly(assemblyRef));
                 }
                 catch (EasyShellException e)
                 {
@@ -487,7 +487,7 @@ namespace EasyShell
             // "command not found" or "permission denied", live on the process path.
             if (!rt.Host.FileSystem.FileExists(cmdName) && cmdName.Contains('.', StringComparison.Ordinal)
                 && rt.Host.Processes.Resolve(cmdName) is null
-                && ReflectionInvoker.CanResolveQualified(cmdName))
+                && ShellCallBinder.CanResolveQualified(rt.Host.Library, cmdName))
                 return InvokeQualified(rt, cmdName, EvalArgs(rt, args.Skip(1)), line);
 
             // External executable
@@ -723,7 +723,7 @@ namespace EasyShell
 
             try
             {
-                return ReflectionInvoker.InvokeFullyQualified(fullyQualified, args);
+                return ShellCallBinder.InvokeQualified(rt.Host.Library, fullyQualified, args);
             }
             catch (Exception e) when (IsReportableCallFailure(e))
             {
@@ -751,7 +751,7 @@ namespace EasyShell
 
             try
             {
-                return ReflectionInvoker.InvokeInstance(handle, method, args);
+                return ShellCallBinder.InvokeInstance(rt.Host.Library, handle, method, args);
             }
             catch (Exception e) when (IsReportableCallFailure(e))
             {

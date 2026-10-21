@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="PublishAot;PublishTrimmed">
+
+  <!--
+    The binding generator: a Roslyn incremental source generator that reads [assembly: ShellBindType(typeof(T))] and writes direct calls to T's members, so a curated library needs no reflection and runs under NativeAOT. It runs inside the build of the project that declares the bindings, so nothing generated is committed.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoWarn>$(NoWarn);RS2008;RS1035</NoWarn>
+    <!--A compiler component is never itself published: an app's -p:PublishAot=true reaches every project restore evaluates, and netstandard2.0 cannot be compiled ahead of time.-->
+    <PublishAot>false</PublishAot>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

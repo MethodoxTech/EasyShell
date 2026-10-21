@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../EasyShell/EasyShell.csproj" />
+    <!--Binds BinderProbe into a curated library, so the generated overloads are held to the reflective binder's preferences.-->
+    <ProjectReference Include="../EasyShell.Generators/EasyShell.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

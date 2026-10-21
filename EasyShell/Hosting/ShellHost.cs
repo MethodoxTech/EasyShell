@@ -34,6 +34,11 @@ namespace EasyShell.Hosting
         public Func<string, bool>? CanInvokeQualified { get; init; }
 
         /// <summary>
+        /// The .NET surface scripts call: the whole runtime by reflection where that works, or a curated library bound at compile time (see <see cref="Binding.ShellLibraries"/>). A sandbox that hands scripts <see cref="Binding.ShellLibraries.Pure"/> has no member to refuse that it did not choose to bind, and a NativeAOT build has no other choice.
+        /// </summary>
+        public Binding.IShellLibrary Library { get; init; } = Binding.ShellLibraries.Default;
+
+        /// <summary>
         /// The same world with a different console - how a pipeline stage or a redirection
         /// captures what a built-in writes, without every built-in having to know it is being
         /// captured.
@@ -45,6 +50,7 @@ namespace EasyShell.Hosting
             Processes = Processes,
             Environment = Environment,
             CanInvokeQualified = CanInvokeQualified,
+            Library = Library,
         };
 
         /// <summary>The historical behavior: real console, real filesystem, real processes.</summary>

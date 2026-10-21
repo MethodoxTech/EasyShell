@@ -8,14 +8,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.2.0</Version>
     <AssemblyTitle>Easy Shell</AssemblyTitle>
-    <!--Depends on entire .Net runtime-->
-    <IsAotCompatible>false</IsAotCompatible>
+    <!--The reflective library is guarded by a feature switch (ShellLibraries.IsReflectionSupported), so everything else is held to the trim and AOT analyzers.-->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
     <!--BuildCommandProcessorArguments is pure string work whose whole point is a rule of cmd.exe's;
         the test for it has to run on every platform, and it does not belong in the public surface.-->
     <InternalsVisibleTo Include="EasyShell.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--Writes the curated libraries declared in Binding/ShellLibraries.cs.-->
+    <ProjectReference Include="../EasyShell.Generators/EasyShell.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

@@ -194,6 +194,7 @@ namespace EasyShell.Tests
         public static string Take(string a) => $"one:{a}";
         public static string Take(string a, string b = "default") => $"two:{a}:{b}";
         public static string Take(string a, params string[] rest) => $"params:{a}:{rest.Length}";
+        public static string TakeDefault(string a, string b = "default") => $"two:{a}:{b}";
 
         public static string Number(int value) => $"int:{value}";
         public static string Number(double value) => $"double:{value.ToString(System.Globalization.CultureInfo.InvariantCulture)}";

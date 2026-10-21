@@ -5,9 +5,13 @@
 # BuildEasyShell.ps1 does the same job for a machine that has no `easy` yet. The two are meant to stay behaviourally identical; when you change one, change the other.
 #
 # Pass --skip-tests when you know what you are doing: easy BuildEasyShell.easy --skip-tests
+#
+# Pass --build Native for the NativeAOT build: easy BuildEasyShell.easy --build Native. Full, the default, is the distribution as it always was - self-contained on the JIT, reaching any .NET type by reflection; Native is one native executable calling .NET through the curated Standard library, and needs the platform's C/C++ linker.
 
 # Start
 print "Publish for Final Packaging build."
+$Build = (argvalue "--build" "Full")
+assert (OR (== $Build "Full") (== $Build "Native")) (|| "The builds are Full and Native, not " $Build ".")
 
 # A hung restore or test run should fail the build, not occupy the agent forever.
 INTVAR EasyProcessTimeoutSeconds 1800
@@ -19,12 +23,14 @@ $EasyShellRoot = (resolve (JoinPath $EasyScriptRoot ".."))
 $RepoRoot      = (resolve (JoinPath $EasyShellRoot ".." ".."))
 $ProjectPath   = (JoinPath $EasyShellRoot "EasyShell.Cli")
 $TestsPath     = (JoinPath $EasyShellRoot "EasyShell.Tests")
-stringvar PublishFolder (JoinPath $RepoRoot "Publish" "Utilities" "EasyShell" "Current")
+# The two builds publish side by side, so neither replaces the other: Full where `easy` has always been, Native beside it.
+$PackageName   = (?: (== $Build "Native") "EasyShellNative" "EasyShell")
+stringvar PublishFolder (JoinPath $RepoRoot "Publish" "Utilities" $PackageName "Current")
 $ArchiveFolder = (JoinPath $RepoRoot "Publish" "Packages")
 
 # The RID the runtime reports for this machine. Passed explicitly to `dotnet publish` AND used to name the package, so the two can never disagree - which guessing from pointer size does on arm64.
 $Rid = (System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)
-print (|| "Target runtime: " $Rid " (Release)")
+print (|| "Build: " $Build ". Target runtime: " $Rid " (Release)")
 
 # Do not publish something that does not pass its own tests.
 IF (NOT (hasarg "--skip-tests"))
@@ -43,8 +49,14 @@ END
 # Delete current data
 remove $PublishFolder
 
+# NativeAOT links with the MSVC toolchain, found through Visual Studio's vcvarsall.bat; Visual Studio 18's copy runs vswhere.exe by bare name, so the installer folder has to be on PATH or the link fails with MSB3073.
+$VsInstaller = (JoinPath (getenv "ProgramFiles(x86)") "Microsoft Visual Studio" "Installer")
+IF (AND (== $Build "Native") (AND $IsWindows (EXISTS (JoinPath $VsInstaller "vswhere.exe"))))
+    setenv "PATH" (|| (getenv "PATH") ";" $VsInstaller)
+END
+
 # Publish Executable
-dotnet publish $ProjectPath --runtime $Rid --self-contained --configuration Release --output $PublishFolder
+dotnet publish $ProjectPath --runtime $Rid --self-contained --configuration Release --output $PublishFolder (|| "-p:EasyShellBuild=" $Build)
 
 # Validation. The executable is the deliverable; a PDB only ever was a proxy for one.
 $ExecutableName = "easy"
@@ -56,7 +68,9 @@ assert (EXISTS $ExecutablePath) (|| "Build failed. Missing executable: " $Execut
 
 # Smoke test: a self-contained layout can be complete on disk and still not start. Asking the fresh binary for its own version proves it runs and yields the number the package is named after; a non-zero exit code from it aborts the build on the spot.
 $Version = ($ExecutablePath --version)
-print (|| "Smoke test passed, version " $Version ".")
+$Reported = ($ExecutablePath --build)
+assert (System.String.StartsWith $Reported $Build) (|| "Asked for the " $Build " build, but the published executable reports: " $Reported)
+print (|| "Smoke test passed, version " $Version ", " $Reported ".")
 
 # Strip development-only files from the package
 removeall $PublishFolder "*.pdb"
@@ -64,7 +78,7 @@ removeall $PublishFolder "*.xml"
 
 # Create archive. Version and date together, so two builds of one day stay distinguishable.
 $Date = (format "{0:yyyyMMdd}" (GetDate))
-$ArchivePath = (JoinPath $ArchiveFolder (|| "Utility_EasyShell_" $Rid "_v" $Version "_B" $Date ".zip"))
+$ArchivePath = (JoinPath $ArchiveFolder (|| "Utility_" $PackageName "_" $Rid "_v" $Version "_B" $Date ".zip"))
 mkdir $ArchiveFolder
 zip $PublishFolder $ArchivePath
 

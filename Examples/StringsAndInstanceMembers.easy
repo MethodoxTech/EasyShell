@@ -23,12 +23,13 @@ assert (== (+ "10" 1) 11) "numeric strings still add up"
 
 # --- Instance members as command names ---------------------------------------
 
-# The first argument is the instance the member runs on.
-HANDLEVAR Now (System.DateTime.Now)
+# The first argument is the instance the member runs on. A fixed date rather than (getdate), so the output is the same on every run.
+HANDLEVAR Now (System.DateTime.Parse "2026-01-02 03:04")
 HANDLEVAR Later (System.DateTime.AddDays $Now 15)
 
 print (System.DateTime.ToString $Now "yyyy-MM-dd")
 print (System.DateTime.ToString $Later "yyyy-MM-dd")
+assert (== (System.DateTime.ToString $Later "yyyy-MM-dd") "2026-01-17") "AddDays runs on the handle it is given"
 
 # Instance properties work the same way.
 print (|| "Year: " (System.DateTime.Year $Now))

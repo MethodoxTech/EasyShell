@@ -82,6 +82,7 @@ namespace EasyShell.Hosting
         public string NormalizeSeparators(string path) => Commands.CommonUtilities.NormalizeSeparators(path);
         public string GetFullPath(string path) => Path.GetFullPath(path);
         public string Combine(string a, string b) => Path.Combine(a, b);
+        public string Join(string a, string b) => Path.Join(a, b);
         public string? GetDirectoryName(string path) => Path.GetDirectoryName(path);
         public string GetFileName(string path) => Path.GetFileName(path);
         public string GetRelativePath(string relativeTo, string path) => Path.GetRelativePath(relativeTo, path);

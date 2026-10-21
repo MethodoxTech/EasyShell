@@ -15,9 +15,10 @@ namespace EasyShell
             Easy Shell (easy) - a tiny shell scripting language.
 
             Usage:
-              easy <script.es>
+              easy <script.easy> [args...]
               easy --help
               easy --version
+              easy --build      # Full or Native, and the .NET library scripts call through
               easy --repl
 
             REPL:
@@ -170,23 +171,32 @@ namespace EasyShell
         #region Entry
         public static int Main(string[] args)
         {
-            if (args.Contains("--help", StringComparer.OrdinalIgnoreCase))
+            // easy's own options are the ones before the script path; everything after it belongs to the script, so `easy BuildEasyShell.easy --build Native` hands --build to the script instead of answering it here.
+            string[] options = [.. args.TakeWhile(a => a.StartsWith("--", StringComparison.Ordinal))];
+
+            if (options.Contains("--help", StringComparer.OrdinalIgnoreCase))
             {
                 Console.WriteLine(HelpText);
                 return 0;
             }
 
-            if (args.Contains("--version", StringComparer.OrdinalIgnoreCase))
+            if (options.Contains("--version", StringComparer.OrdinalIgnoreCase))
             {
                 Console.WriteLine(Version);
                 return 0;
             }
 
+            if (options.Contains("--build", StringComparer.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(Build);
+                return 0;
+            }
+
             // Repl
-            if (args.Length == 0 || args.Contains("--repl", StringComparer.OrdinalIgnoreCase))
+            if (args.Length == 0 || options.Contains("--repl", StringComparer.OrdinalIgnoreCase))
             {
                 Runtime rt = GetPresetRuntime(Directory.GetCurrentDirectory(), []);
-                Console.WriteLine($"Easy Shell {Version}  (:help for help)");
+                Console.WriteLine($"Easy Shell {Version}, {Build}  (:help for help)");
                 return EasyShellRepl.Run(new ReplOptions
                 {
                     Runtime = rt,
@@ -230,6 +240,13 @@ namespace EasyShell
         #endregion
 
         #region Helpers
+        /// <summary>
+        /// Which of the two builds this is, by what it can call: the Full build reaches any .NET type by reflection, and the Native build (NativeAOT) only what the curated Standard library bound when it was compiled. `--version` stays the bare number, because build scripts name packages after it.
+        /// </summary>
+        private static string Build => Binding.ShellLibraries.IsReflectionSupported
+            ? "Full build (reflection: any .NET type)"
+            : $"Native build ({Binding.ShellLibraries.Standard.Name} library: {Binding.ShellLibraries.Standard.Types.Count()} .NET types)";
+
         private static Runtime GetPresetRuntime(string scriptRoot, string[] scriptArguments)
         {
             Runtime rt = new();

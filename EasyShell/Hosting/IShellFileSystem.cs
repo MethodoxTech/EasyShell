@@ -31,6 +31,18 @@ namespace EasyShell.Hosting
 
         string GetFullPath(string path);
         string Combine(string a, string b);
+
+        /// <summary>
+        /// JOINPATH's join of two parts, already folded by <see cref="NormalizeSeparators"/>: one separator between them, added only when neither side brings its own, and - unlike <see cref="Combine"/> - a rooted second part does not discard the first. That is <c>System.IO.Path.Join</c> on the real machine.
+        /// </summary>
+        /// <remarks>The default joins with '/', the separator of every virtual filesystem this seam was made for; a filesystem with another convention overrides it, as the default host does.</remarks>
+        string Join(string a, string b)
+        {
+            if (a.Length == 0) return b;
+            if (b.Length == 0) return a;
+            return a[^1] == '/' || b[0] == '/' ? a + b : a + "/" + b;
+        }
+
         string? GetDirectoryName(string path);
         string GetFileName(string path);
         string GetRelativePath(string relativeTo, string path);

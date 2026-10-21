@@ -39,6 +39,11 @@ namespace EasyShell.Hosting
         public Binding.IShellLibrary Library { get; init; } = Binding.ShellLibraries.Default;
 
         /// <summary>
+        /// The wall clock `getdate` reads. The real one by default; a virtual machine that keeps its own time hands in its own, so a script inside it sees the machine's date rather than the host's - which is also why the curated <see cref="Binding.ShellLibraries.Pure"/> library binds no clock of its own.
+        /// </summary>
+        public TimeProvider Clock { get; init; } = TimeProvider.System;
+
+        /// <summary>
         /// The same world with a different console - how a pipeline stage or a redirection
         /// captures what a built-in writes, without every built-in having to know it is being
         /// captured.
@@ -51,6 +56,7 @@ namespace EasyShell.Hosting
             Environment = Environment,
             CanInvokeQualified = CanInvokeQualified,
             Library = Library,
+            Clock = Clock,
         };
 
         /// <summary>The historical behavior: real console, real filesystem, real processes.</summary>

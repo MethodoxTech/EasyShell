@@ -89,27 +89,18 @@ namespace EasyShell
             return [.. names];
         }
         /// <summary>
-        /// Reflection-backed aliases. Only names whose targets are PURE (no machine state) or
-        /// deliberately host-only (zip) remain here; everything that touches filesystem, console,
-        /// environment or working directory is a host-routed built-in now - see
-        /// <see cref="ExecuteHostBuiltin"/> - so that a virtualized <see cref="Hosting.ShellHost"/>
-        /// carries the whole command set with it.
+        /// Library-backed aliases: short names for a member of the host's .NET library. Only names whose targets are pure computation or deliberately host-only (zip) remain here; everything that touches the filesystem, the console, the environment, the working directory or the clock - `joinpath` and `getdate` included, since a path's separator and the time of day belong to the machine - is a host-routed built-in, see <see cref="ExecuteHostBuiltin"/>, so that a virtualized <see cref="Hosting.ShellHost"/> carries the whole command set with it.
         /// </summary>
+        /// <remarks>An alias whose target the host's library does not bind does not exist either: the name goes on to the program path, so `zip` on a host that binds no archive code is that machine's own `zip`, or "command not found", rather than a complaint about a type the script never named.</remarks>
         private static readonly Dictionary<string, string> Aliases =
             new(StringComparer.OrdinalIgnoreCase)
             {
-                // Path arithmetic (pure)
-                // Remark: Deliberately NOT System.IO.Path.Join - see CommonUtilities.JoinPath for why.
-                ["joinpath"] = "EasyShell.Commands.CommonUtilities.JoinPath",
                 // String
                 ["format"] = "System.String.Format",
-                // Zip (host-only by design: operates on real archives; a sandboxing host blocks it
-                // via CanInvokeQualified)
+                // Zip (host-only by design: operates on real archives, and only the Machine library binds it)
                 ["zip"] = "EasyShell.Commands.ZipUtil.CompressArchive",
                 // Math
                 ["sqrt"] = "System.Math.Sqrt",
-                // Date
-                ["getdate"] = "System.DateTime.Now",
             };
         #endregion
 
@@ -225,8 +216,8 @@ namespace EasyShell
             if (IsHostBuiltin(cmdName))
                 return ExecuteHostBuiltin(rt, cmdName, EvalArgs(rt, args.Skip(1)), line);
 
-            // Command alias
-            if (Aliases.TryGetValue(cmdName, out string? target))
+            // Command alias, when the host's library has its target
+            if (Aliases.TryGetValue(cmdName, out string? target) && ShellCallBinder.CanResolveQualified(rt.Host.Library, target))
             {
                 // Replace command name with fully-qualified target and invoke as usual
                 // Equivalent to: target <args...>
@@ -581,7 +572,7 @@ namespace EasyShell
         {
             "cd", "cwd", "resolve", "exists", "setenv", "getenv", "hasarg", "arg", "argvalue",
             "mkdir", "remove", "rm", "removeall", "cp", "mv", "print", "rpl", "regrpl",
-            "prompt", "choose",
+            "prompt", "choose", "joinpath", "getdate",
         };
 
         private static bool IsHostBuiltin(string cmdName) => HostBuiltins.Contains(cmdName);
@@ -702,6 +693,11 @@ namespace EasyShell
                 case "regrpl":
                     Hosting.ShellBuiltins.RegexReplace(host, Arg(0, "a file, a pattern and a replacement"), Arg(1, "a pattern"), Arg(2, "a replacement"));
                     return Value.Null;
+                case "joinpath":
+                    Arg(0, "at least one path part");
+                    return new Value(ValueKind.String, Hosting.ShellBuiltins.JoinPath(host, [.. args.Select(v => v.AsString())]));
+                case "getdate":
+                    return new Value(ValueKind.Handle, Hosting.ShellBuiltins.GetDate(host));
                 default:
                     throw new EasyShellException($"{line}: Unknown built-in '{cmdName}'.");
             }

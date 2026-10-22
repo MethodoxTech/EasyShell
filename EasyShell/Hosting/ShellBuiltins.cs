@@ -19,6 +19,27 @@ namespace EasyShell.Hosting
         private static string Expand(ShellHost host, string path)
             => host.FileSystem.NormalizeSeparators(host.Environment.ExpandVariables(path));
 
+        /// <summary>
+        /// JOINPATH: the parts joined with the host filesystem's separator, each folded onto its convention first, empty parts skipped. On the real machine that is what <see cref="Commands.CommonUtilities.JoinPath(string, string)"/> always did - either separator accepted, <c>Path.Join</c> rather than <c>Path.Combine</c> - and inside a virtual machine it is that machine's '/', where the static gave the host's '' on Windows.
+        /// </summary>
+        public static string JoinPath(ShellHost host, IReadOnlyList<string> parts)
+        {
+            string joined = string.Empty;
+            foreach (string part in parts)
+                if (!string.IsNullOrEmpty(part))
+                    joined = host.FileSystem.Join(joined, host.FileSystem.NormalizeSeparators(part));
+            return joined;
+        }
+
+        /// <summary>
+        /// GETDATE: the host clock's local time. On the real clock it is exactly <see cref="DateTime.Now"/>, kind and all; a clock in another time zone gives an unspecified kind, because <see cref="DateTimeKind.Local"/> would claim the host's zone.
+        /// </summary>
+        public static DateTime GetDate(ShellHost host)
+        {
+            DateTime local = host.Clock.GetLocalNow().DateTime;
+            return host.Clock.LocalTimeZone.Equals(TimeZoneInfo.Local) ? DateTime.SpecifyKind(local, DateTimeKind.Local) : local;
+        }
+
         public static bool Exists(ShellHost host, string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;

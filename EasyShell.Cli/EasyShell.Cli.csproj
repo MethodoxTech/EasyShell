@@ -9,9 +9,27 @@
     <AssemblyName>easy</AssemblyName>
     <AssemblyTitle>Easy Shell</AssemblyTitle>
     <ApplicationIcon>EasyShell.ico</ApplicationIcon>
-    <!--Publishes with NativeAOT (dotnet publish -r <rid> -p:PublishAot=true), calling .NET through the curated Standard library instead of reflection.-->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+
+  <!--
+    The two builds of `easy`, chosen with -p:EasyShellBuild=<name> (BuildEasyShell.ps1 -Build <name>, BuildEasyShell.easy - -build <name>):
+    Full   - the default and the distribution as it always was: self-contained on the JIT, reaching any .NET type a script names by reflection.
+    Native - NativeAOT: one native executable that calls .NET only through the curated Standard library its source generator bound at compile time. Trim and AOT warnings are errors, because a warning here is a script call that would fail at run time.
+  -->
+  <PropertyGroup>
+    <EasyShellBuild Condition="'$(EasyShellBuild)' == ''">Full</EasyShellBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EasyShellBuild)' == 'Native'">
+    <PublishAot>true</PublishAot>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <MSBuildWarningsAsErrors>$(MSBuildWarningsAsErrors);IL2026;IL2046;IL2057;IL2058;IL2059;IL2060;IL2067;IL2068;IL2069;IL2070;IL2071;IL2072;IL2073;IL2074;IL2075;IL2076;IL2077;IL2078;IL2079;IL2080;IL2081;IL2082;IL2083;IL2084;IL2085;IL2086;IL2087;IL2088;IL2089;IL2090;IL2091;IL2092;IL2093;IL2094;IL2095;IL2096;IL2097;IL2098;IL2099;IL2100;IL2101;IL2102;IL2103;IL2104;IL2105;IL2106;IL2107;IL2108;IL2109;IL2110;IL2111;IL2112;IL2113;IL2114;IL2115;IL2116;IL2117;IL2118;IL2119;IL2120;IL2121;IL2122;IL3050;IL3051;IL3052;IL3053;IL3054;IL3055;IL3056</MSBuildWarningsAsErrors>
+  </PropertyGroup>
+
+  <Target Name="RefuseAnUnknownEasyShellBuild" BeforeTargets="Build" Condition="'$(EasyShellBuild)' != 'Full' and '$(EasyShellBuild)' != 'Native'">
+    <Error Text="EasyShellBuild is '$(EasyShellBuild)'; the builds are Full and Native." />
+  </Target>
 
   <ItemGroup Condition="'$(PublishAot)' == 'true' or '$(PublishTrimmed)' == 'true'">
     <!--Folds ShellLibraries.IsReflectionSupported to false, so the reflective library is removed from the binary rather than merely never called.-->

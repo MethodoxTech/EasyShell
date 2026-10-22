@@ -70,7 +70,7 @@ namespace EasyShell.Interactive
             // All prompt I/O goes through the runtime's host, so the REPL follows the shell into a virtual machine (tty console) exactly as it runs on the real one (System.Console).
             Hosting.IShellConsole console = rt.Host.Console;
             Action<string> writeError = options.WriteError ?? console.WriteErrorLine;
-            Func<string> prompt = options.Prompt ?? (() => "es> ");
+            Func<string> prompt = options.Prompt ?? (() => "easy> ");
             Func<string> continuation = options.ContinuationPrompt ?? (() => "... ");
 
             options.Banner?.Invoke();

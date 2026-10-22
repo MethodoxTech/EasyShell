@@ -85,6 +85,22 @@ namespace EasyShell.Tests
         }
 
         [Fact]
+        public void PureKnowsNothingOfTheHostsPathsOrClock()
+        {
+            // The two things a machine underneath could leak through computation: its separator (CommonUtilities joins with it) and its time. joinpath and getdate are host built-ins instead.
+            Assert.False(ShellCallBinder.CanResolveQualified(ShellLibraries.Pure, "EasyShell.Commands.CommonUtilities.JoinPath"));
+            CuratedType dateTime = (CuratedType)ShellLibraries.Pure.Resolve("System.DateTime")!;
+            Assert.Null(dateTime.FindProperty("Now", isStatic: true));
+            Assert.Null(dateTime.FindProperty("UtcNow", isStatic: true));
+            Assert.Null(dateTime.FindProperty("Today", isStatic: true));
+
+            // Standard, what a Native easy calls, still has them: Machine binds all of DateTime and CommonUtilities.
+            CuratedType full = (CuratedType)ShellLibraries.Standard.Resolve("System.DateTime")!;
+            Assert.NotNull(full.FindProperty("Now", isStatic: true));
+            Assert.True(ShellCallBinder.CanResolveQualified(ShellLibraries.Standard, "EasyShell.Commands.CommonUtilities.JoinPath"));
+        }
+
+        [Fact]
         public void LoadAssemblyIsRefusedBecauseTheSurfaceIsFixed()
         {
             Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Pure) };

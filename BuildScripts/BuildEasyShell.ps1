@@ -1,13 +1,16 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Bootstrap build for Easy Shell: publishes `easy` self-contained and packages it.
+    Bootstrap build for Easy Shell: publishes one of the two builds of `easy` and packages it.
 
 .DESCRIPTION
     Unfortunately a ps1 script is needed to build the first ever `easy` on a fresh platform -
     BuildEasyShell.easy does the same job, but cannot run until this one has produced the
     interpreter. The two are meant to stay behaviourally identical; when you change one, change
     the other.
+
+.PARAMETER Build
+    Which `easy` to publish. Full (the default) is the distribution as it always was: self-contained on the JIT, reaching any .NET type by reflection. Native is NativeAOT: one native executable calling .NET through the curated Standard library, published with trim and AOT warnings as errors; it needs the platform's C/C++ linker (on Windows, Visual Studio's C++ build tools). BuildScripts/VerifyNative.ps1 checks a Native build against the Full one.
 
 .PARAMETER Configuration
     Build configuration. Applied to BOTH the test run and the publish, so what is validated is
@@ -22,6 +25,9 @@
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('Full', 'Native')]
+    [string]$Build = 'Full',
+
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
 
@@ -118,6 +124,17 @@ function Remove-ItemResilient {
     }
 }
 
+function Add-VsWhereToPath {
+    <#
+        NativeAOT links with the MSVC toolchain, which it finds through Visual Studio's vcvarsall.bat; Visual Studio 18's copy runs vswhere.exe by bare name, so unless the installer folder is on PATH the error text ends up inside the linker's path and the link fails with MSB3073. Harmless where vswhere is already reachable.
+    #>
+    if (-not $IsWindows -or (Get-Command vswhere.exe -ErrorAction SilentlyContinue)) { return }
+    $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+    if (Test-Path -LiteralPath (Join-Path $installer 'vswhere.exe')) {
+        $env:PATH = "$env:PATH;$installer"
+    }
+}
+
 function Get-ProjectVersion {
     <# The <Version> from a csproj, so packages carry more identity than a date. #>
     param([Parameter(Mandatory)][string]$ProjectFile)
@@ -137,7 +154,8 @@ $RepoRoot      = (Get-Item -LiteralPath $EasyShellRoot).Parent.Parent.FullName
 $ProjectPath   = Join-Path $EasyShellRoot 'EasyShell.Cli'
 $ProjectFile   = Join-Path $ProjectPath 'EasyShell.Cli.csproj'
 $TestsPath     = Join-Path $EasyShellRoot 'EasyShell.Tests'
-$PublishFolder = Join-Path $RepoRoot 'Publish/Utilities/EasyShell/Current'
+# The two builds publish side by side, so neither replaces the other: Full where `easy` has always been, Native beside it.
+$PublishFolder = Join-Path $RepoRoot ($Build -eq 'Native' ? 'Publish/Utilities/EasyShellNative/Current' : 'Publish/Utilities/EasyShell/Current')
 $ArchiveFolder = Join-Path $RepoRoot 'Publish/Packages'
 #endregion
 
@@ -146,7 +164,7 @@ Write-Host 'Publish for Final Packaging build.'
 if (-not $RuntimeIdentifier) {
     $RuntimeIdentifier = Get-SdkRuntimeIdentifier
 }
-Write-Host "Target runtime: $RuntimeIdentifier ($Configuration)"
+Write-Host "Build: $Build. Target runtime: $RuntimeIdentifier ($Configuration)"
 
 # Do not publish something that does not pass its own tests
 if (-not $SkipTests) {
@@ -168,12 +186,14 @@ Remove-ItemResilient -Path $PublishFolder
 
 # Publish executable. An explicit -r beats --use-current-runtime: same result, but the RID is now a
 # value this script holds, and can therefore label the package with.
+if ($Build -eq 'Native') { Add-VsWhereToPath }
 Invoke-Native dotnet @(
     'publish', $ProjectPath,
     '--runtime', $RuntimeIdentifier,
     '--self-contained',
     '--configuration', $Configuration,
-    '--output', $PublishFolder
+    '--output', $PublishFolder,
+    "-p:EasyShellBuild=$Build"
 ) 'dotnet publish'
 
 # Validation. The executable is the deliverable; a PDB only ever was a proxy for one.
@@ -188,6 +208,11 @@ if (-not (Test-Path -LiteralPath $ExecutablePath)) {
 if ($RuntimeIdentifier -eq (Get-SdkRuntimeIdentifier)) {
     Write-Host 'Smoke testing the published executable.'
     Invoke-Native $ExecutablePath @('--version') 'Published executable smoke test'
+    # And that it is the build that was asked for: a Native publish that quietly came out on the JIT would pass every other check.
+    $reported = & $ExecutablePath --build
+    if (-not "$reported".StartsWith($Build)) {
+        throw "Asked for the $Build build, but the published executable reports: $reported"
+    }
 }
 
 # Strip development-only files from the package
@@ -199,7 +224,8 @@ foreach ($pattern in @('*.pdb', '*.xml')) {
 # Archive path. Version and date together, so two builds of one day stay distinguishable.
 $Version     = Get-ProjectVersion -ProjectFile $ProjectFile
 $Date        = Get-Date -Format 'yyyyMMdd'
-$ArchiveName = "Utility_EasyShell_${RuntimeIdentifier}_v${Version}_B${Date}.zip"
+$PackageName = $Build -eq 'Native' ? 'EasyShellNative' : 'EasyShell'
+$ArchiveName = "Utility_${PackageName}_${RuntimeIdentifier}_v${Version}_B${Date}.zip"
 $ArchivePath = Join-Path $ArchiveFolder $ArchiveName
 
 if (-not (Test-Path -LiteralPath $ArchiveFolder)) {

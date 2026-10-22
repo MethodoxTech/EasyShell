@@ -162,7 +162,7 @@ namespace EasyShell.Tests
         }
 
         internal static (Runtime Runtime, FakeFileSystem Fs, FakeConsole Console, FakeEnvironment Env, FakeProcessRunner Procs)
-            CreateWorld(Func<string, bool>? reflectionPolicy = null)
+            CreateWorld(Func<string, bool>? reflectionPolicy = null, Binding.IShellLibrary? library = null, TimeProvider? clock = null)
         {
             FakeFileSystem fs = new();
             FakeConsole console = new();
@@ -178,6 +178,8 @@ namespace EasyShell.Tests
                     Processes = procs,
                     Environment = env,
                     CanInvokeQualified = reflectionPolicy,
+                    Library = library ?? Binding.ShellLibraries.Default,
+                    Clock = clock ?? TimeProvider.System,
                 },
             };
             return (rt, fs, console, env, procs);
@@ -502,6 +504,62 @@ namespace EasyShell.Tests
                 print (CALL $S ToUpper)
                 """);
             Assert.Equal("HELLO", console.Output[^1]);
+        }
+
+        /// <summary>A clock stopped at one instant, in the host's time zone.</summary>
+        private sealed class StoppedClock(DateTimeOffset now) : TimeProvider
+        {
+            public override DateTimeOffset GetUtcNow() => now;
+        }
+
+        [Fact]
+        public void JoinPathUsesTheVirtualFilesystemsSeparator()
+        {
+            // joinpath used to be CommonUtilities.JoinPath, a static that joins with the host's separator: inside a virtual machine on Windows, (joinpath "/home" "x") came out with a backslash, a name its '/' filesystem cannot find.
+            var (rt, _, console, _, _) = CreateWorld();
+
+            Run(rt, """
+                print (joinpath "/home/student" "notes" "today.txt")
+                print (joinpath "/home/" "/x")
+                print (joinpath "a" "" "b")
+                """);
+
+            Assert.Equal(["/home/student/notes/today.txt", "/home//x", "a/b"], console.Output);
+        }
+
+        [Fact]
+        public void GetDateReadsTheHostsClock()
+        {
+            DateTimeOffset machineTime = new(1999, 12, 31, 23, 0, 0, TimeSpan.Zero);
+            var (rt, _, console, _, _) = CreateWorld(clock: new StoppedClock(machineTime));
+
+            Run(rt, """print (System.DateTime.Year (getdate))""");
+
+            Assert.Equal(machineTime.ToLocalTime().Year.ToString(), console.Output[^1]);
+        }
+
+        [Fact]
+        public void OnThePureLibraryTheHostsClockIsTheOnlyClock()
+        {
+            // Pure binds DateTime without Now, UtcNow and Today, so a virtual machine's scripts cannot read the host's time around the machine's own.
+            var (rt, _, console, _, _) = CreateWorld(library: Binding.ShellLibraries.Pure, clock: new StoppedClock(new DateTimeOffset(1999, 6, 15, 12, 0, 0, TimeSpan.Zero)));
+
+            Run(rt, """print (System.DateTime.Month (getdate))""");
+            Assert.Equal("6", console.Output[^1]);
+
+            var ex = Assert.Throws<Exceptions.EasyShellException>(() => Run(rt, "System.DateTime.Now"));
+            Assert.Contains("not found", ex.Message);
+        }
+
+        [Fact]
+        public void AnAliasTheLibraryCannotServeIsNotACommand()
+        {
+            // zip is ZipUtil.CompressArchive, which only the Machine library binds. On a Pure host the alias does not exist, so the name is a program like any other: the machine's own zip if it has one, "command not found" if not - never a complaint about a .NET type the script never named.
+            var (rt, _, _, _, procs) = CreateWorld(library: Binding.ShellLibraries.Pure);
+
+            Run(rt, """zip "a" "b.zip" """);
+
+            Assert.Equal("cap:zip a b.zip", Assert.Single(procs.Invocations));
         }
 
         [Fact]

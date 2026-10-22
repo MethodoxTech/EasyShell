@@ -1,0 +1,37 @@
+# Calling .NET, the same way in both builds of easy.
+# Run with: easy ./Examples/CallingDotNet.easy
+#
+# The Full build finds these members by reflection; the Native build calls the direct calls its source generator wrote for the Standard library. Every line here is in that library, so both builds print the same thing, and BuildScripts/VerifyNative.ps1 holds them to it. It self-checks with assert, so a non-zero exit code means something regressed.
+
+# --- The aliases ---------------------------------------------------------------
+
+print (sqrt 16)
+assert (== (sqrt 16) 4) "sqrt is System.Math.Sqrt"
+print (format "x={0}" 5)
+assert (== (format "{0}-{1}" "a" 2) "a-2") "format is System.String.Format"
+
+# joinpath and getdate belong to the host: its separator, its clock.
+print (joinpath "a" "b/c")
+assert (== (System.DateTime.Year (getdate)) (System.DateTime.Year (System.DateTime.Now))) "getdate reads the same clock as System.DateTime.Now"
+
+# --- Static members ------------------------------------------------------------
+
+print (System.Math.Max 3 9)
+print (System.Math.Round 2.567 2)
+print (System.String.Join "," "a" "b" "c")
+print (System.Convert.ToInt32 "42")
+print (System.Text.RegularExpressions.Regex.IsMatch "v12" "^v[0-9]")
+print (System.Text.RegularExpressions.Regex.Replace "a1b22c333" "[0-9]+" "#")
+
+# --- Instance members, with the target first or through CALL --------------------
+
+print (CALL "abc" ToUpperInvariant)
+print (System.String.PadLeft "7" 3 "0")
+$Match = (System.Text.RegularExpressions.Regex.Match "release-1.4.2" "([0-9]+)\.([0-9]+)\.([0-9]+)")
+print (CALL (CALL (System.Text.RegularExpressions.Match.Groups $Match) get_Item 2) ToString)
+$Span = (System.TimeSpan.FromMinutes 90)
+print (System.TimeSpan.TotalHours $Span)
+$When = (System.DateTime.Parse "2026-03-04")
+print (CALL (System.DateTime.AddMonths $When 1) ToString "yyyy-MM-dd")
+
+print "All checks passed."

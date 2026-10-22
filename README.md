@@ -1,7 +1,8 @@
 ﻿# Easy Shell (`easy`)
 
 Type: Shell Scripting Language  
-Extensions: (Preferred) `.easy`, (Candidate) `.es`
+Program: `easy`  
+Extension: `.easy`
 Version: 0.1.0
 
 > A simple shell that works cross-platform. It can't get easier.
@@ -43,7 +44,7 @@ Easy Shell is a minimal shell scripting language implemented in C#. It combines:
   * Static: `System.IO.File.WriteAllText "path" "content"`
   * Instance: `System.DateTime.AddDays $Now 15` (first argument is the target)
   * Instance on a handle: `CALL $handle MethodName [args...]`
-  * Under NativeAOT, or in a sandbox, through a curated library bound at compile time instead - see [Docs/NativeAOT.md](Docs/NativeAOT.md)
+  * In the Native build, or in a sandbox, through a curated library bound at compile time instead - see [Two builds](#two-builds-full-and-native) and [Docs/NativeAOT.md](Docs/NativeAOT.md)
 * **External process execution** for non-keyword, non-qualified commands, captured in scripts
   and run in the foreground at an interactive prompt
 * **A line-editing prompt** with history, cursor motion and Tab completion
@@ -96,14 +97,14 @@ System.IO.File.WriteAllText $PATH $VALUE
 ### Distinguish between argument and expression
 
 ```easy
-es> $Date = (format "{0:yyyyMMdd}" (GetDate))
-es> print $date
+easy> $Date = (format "{0:yyyyMMdd}" (GetDate))
+easy> print $date
 20251214
 ```
 
 ```easy
-es> $Date = (format "{0:yyyyMMdd}" GetDate)
-es> print $date
+easy> $Date = (format "{0:yyyyMMdd}" GetDate)
+easy> print $date
 GetDate
 ```
 
@@ -142,7 +143,10 @@ read from a pipe.
 ```bash
 easy --help
 easy --version
+easy --build      # which of the two builds this is: Full or Native
 ```
+
+`easy`'s own options come before the script path; everything after the script path belongs to the script, `--help` and `--version` included.
 
 ## Language Overview
 
@@ -389,7 +393,7 @@ other built-in.
 
 * `MKDIR <path>`, `REMOVE`/`RM <path>`, `CP <source> <target>`, `MV <source> <target>`
 * `EXISTS <path>` - true for a file or a directory
-* `JOINPATH <part> <part> [...]`, `RESOLVE <path>`
+* `JOINPATH <part> <part> [...]`, `RESOLVE <path>` - `JOINPATH` accepts either separator and joins with the host's own, so a virtual machine's prompt joins with its `/` even on Windows
 * `REMOVEALL <folder> <pattern> [recursive]` - deletes every **file** matching a wildcard and
   answers with how many went, recursively unless told otherwise
 
@@ -586,10 +590,45 @@ Or using `dotnet`:
 dotnet run -- ./BuildScripts/BuildEasyShell.easy
 ```
 
-As a single native executable, which calls .NET through the curated Standard library rather than by reflection (see [Docs/NativeAOT.md](Docs/NativeAOT.md)):
+Each of these builds the Full `easy`; see [Two builds](#two-builds-full-and-native) for the Native one.
+
+### Two builds: Full and Native
+
+`easy` comes in two builds, made from the same source and running the same language:
+
+| | Full | Native |
+|---|---|---|
+| What it is | Self-contained .NET on the JIT, the distribution as it always was | One NativeAOT executable |
+| How scripts call .NET | By reflection: any type a script names, any assembly `LOADASSEMBLY` loads | Through the curated **Standard** library its source generator bound at compile time: 25 types (strings, numbers, dates, regular expressions, paths, files, directories, environment, archives) |
+| A type outside that | Works | Does not exist: the name goes to the program path, so it is "command not found" |
+| `LOADASSEMBLY` | Loads | Refused: the surface was fixed when the program was built |
+| Size on win-x64 | 77.6 MB in 192 files | 5.2 MB, one file |
+| Who ships it | The EasyShell distribution, for build automation where reaching any type is the point | Divooka Compute and The Elder Machine, where a fixed surface is the point |
+| Package | `Utility_EasyShell_<rid>_v<version>_B<date>.zip` | `Utility_EasyShellNative_<rid>_v<version>_B<date>.zip` |
+| Published to | `<build-root>/Publish/Utilities/EasyShell/Current` | `<build-root>/Publish/Utilities/EasyShellNative/Current` |
+
+Both build scripts take the build's name, Full by default:
 
 ```powershell
-dotnet publish EasyShell.Cli -c Release -r win-x64 -p:PublishAot=true
+pwsh ./BuildEasyShell.ps1 -Build Native
+```
+
+```bash
+easy ./BuildEasyShell.easy --build Native
+```
+
+Or with `dotnet`, where `EasyShellBuild` is the switch:
+
+```bash
+dotnet publish EasyShell.Cli -c Release -r win-x64 -p:EasyShellBuild=Native
+```
+
+The Native build treats every trim and AOT warning as an error, because each one would be a script call that fails at run time. It needs the platform's C/C++ linker: on Windows, Visual Studio's C++ build tools. (Visual Studio 18's `vcvarsall.bat` runs `vswhere.exe` by bare name, so the build scripts put the Visual Studio installer folder on PATH when it is not; a plain `dotnet publish` without it fails to link with MSB3073.) `easy --build` says which build a binary is.
+
+`BuildScripts/VerifyNative.ps1` is the check that a Native build is right. It publishes both builds from a clean intermediate folder, requires the Native publish to report no warnings at all, runs every script in `Examples/` with each build and requires a zero exit code and identical output from both, and checks the one intended difference - a type outside the Standard library (`System.Uri`) works in Full and does not exist in Native, and `LOADASSEMBLY` is refused. Run it after changing the binder, the libraries or the generator:
+
+```powershell
+pwsh ./BuildScripts/VerifyNative.ps1
 ```
 
 Expected folder structure:
@@ -618,7 +657,7 @@ Expected folder structure:
 │  └─ Packages/
 ```
 
-The build script lives directly under `External/EasyShell/BuildScripts`.
+The build scripts live directly under `External/EasyShell/BuildScripts`.
 
 It uses:
 
@@ -635,7 +674,8 @@ So `BuildScripts` must be three levels below `<repo-root>`:
 The script publishes `External/EasyShell/EasyShell.Cli` into:
 
 ```txt
-<build-root>/Publish/Utilities/EasyShell/Current
+<build-root>/Publish/Utilities/EasyShell/Current         # Full
+<build-root>/Publish/Utilities/EasyShellNative/Current   # Native
 ```
 
 Then creates a package in:
@@ -721,6 +761,11 @@ Then creates a package in:
     end-of-input rather than picking the first option - a publish script that guesses which store
     it is building for is worse than one that stops
   * **Wildcards**: `*`, `?` and `[...]` in an unquoted program argument expand to the matching paths, sorted, through the host's filesystem - so `cat pets/*` works at `easy`'s prompt and inside a virtual machine alike, where it used to hand `cat` the literal `pets/*`. Only program arguments expand: `(* 2 3)`, `removeall $dir *.xml` and every other language command see their words exactly as before. Hidden names need a pattern starting with `.`, and a pattern that matches nothing is passed on as typed, as in POSIX
+  * **Two builds, Full and Native.** The Full build is the distribution as it was; the Native build is the NativeAOT `easy` that Divooka Compute and The Elder Machine ship, chosen with `-Build Native` / `--build Native` / `-p:EasyShellBuild=Native`, packaged as `Utility_EasyShellNative_...`, published with trim and AOT warnings as errors, and checked against the Full build by `BuildScripts/VerifyNative.ps1`. `easy --build` says which one is running. See [Two builds](#two-builds-full-and-native)
+  * **`joinpath` and `getdate` belong to the host.** They were aliases onto `CommonUtilities.JoinPath` and `System.DateTime.Now`, so inside a virtual machine `joinpath` joined with the real machine's separator (a backslash on Windows) and `getdate` read the real machine's clock. They are host-routed built-ins now: `joinpath` joins through `IShellFileSystem.Join` (`Path.Join` on the default host, so nothing changes there) and `getdate` reads `ShellHost.Clock` (`TimeProvider.System` by default). The Pure library lost `CommonUtilities` and `DateTime.Now`/`UtcNow`/`Today` accordingly, so it holds nothing of the machine it runs on; Machine binds all of `DateTime`, so Standard is unchanged
+  * An alias whose target the host's library does not bind is not a command: on a Pure host `zip` is whatever program answers to it, or "command not found"
+  * The prompt is `easy>`, and the help text says `easy <script.easy>`: the program, the language and the extension are all `easy`
+  * `easy`'s own options are read only before the script path, so `easy Build.easy --build Native` passes `--build` to the script
   * **NativeAOT.** A script's .NET calls go through its host's `ShellHost.Library`: the whole runtime by reflection where that works, or a curated library whose members `EasyShell.Generators` bound at compile time. A NativeAOT `easy` used to build with nine trim warnings and then fail every .NET call at run time, because the trimmer kept nothing a script names only by string; it now publishes with none and calls the Standard library (Pure and Machine, 25 types). The binder's rules are shared by both libraries and a parity test holds them to the same results; under the JIT nothing changes. See [Docs/NativeAOT.md](Docs/NativeAOT.md)
 
 ## License

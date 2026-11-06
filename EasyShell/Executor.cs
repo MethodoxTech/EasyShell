@@ -97,7 +97,7 @@ namespace EasyShell
             {
                 // String
                 ["format"] = "System.String.Format",
-                // Zip (host-only by design: operates on real archives, and only the Machine library binds it)
+                // Zip (host-only by design: operates on real archives, and only the HostMachine library binds it)
                 ["zip"] = "EasyShell.Commands.ZipUtil.CompressArchive",
                 // Math
                 ["sqrt"] = "System.Math.Sqrt",

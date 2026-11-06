@@ -25,17 +25,17 @@ using System.Text.RegularExpressions;
 [assembly: ShellBindType(typeof(Group), Library = "Computation")]
 [assembly: ShellBindType(typeof(GroupCollection), Library = "Computation")]
 
-// Machine: what a build script does to the real machine it runs on, beyond the host-routed built-ins. Never for a sandbox.
-[assembly: ShellBindType(typeof(DateTime), Library = "Machine")]
-[assembly: ShellBindType(typeof(System.IO.Path), Library = "Machine")]
-[assembly: ShellBindType(typeof(System.IO.File), Library = "Machine")]
-[assembly: ShellBindType(typeof(System.IO.Directory), Library = "Machine")]
-[assembly: ShellBindType(typeof(Environment), Library = "Machine")]
-[assembly: ShellBindType(typeof(OperatingSystem), Library = "Machine", StaticOnly = true)]
-[assembly: ShellBindType(typeof(System.Runtime.InteropServices.RuntimeInformation), Library = "Machine")]
-[assembly: ShellBindType(typeof(System.Diagnostics.FileVersionInfo), Library = "Machine")]
-[assembly: ShellBindType(typeof(EasyShell.Commands.CommonUtilities), Library = "Machine")]
-[assembly: ShellBindType(typeof(EasyShell.Commands.ZipUtil), Library = "Machine")]
+// HostMachine: what a build script does to the real machine it runs on, beyond the host-routed built-ins. Never for a sandbox.
+[assembly: ShellBindType(typeof(DateTime), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(System.IO.Path), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(System.IO.File), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(System.IO.Directory), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(Environment), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(OperatingSystem), Library = "HostMachine", StaticOnly = true)]
+[assembly: ShellBindType(typeof(System.Runtime.InteropServices.RuntimeInformation), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(System.Diagnostics.FileVersionInfo), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(EasyShell.Commands.CommonUtilities), Library = "HostMachine")]
+[assembly: ShellBindType(typeof(EasyShell.Commands.ZipUtil), Library = "HostMachine")]
 
 namespace EasyShell.Binding
 {
@@ -63,9 +63,9 @@ namespace EasyShell.Binding
         /// <summary>Computation only: strings, numbers, dates, conversions, regular expressions - but not the time of day, which is the host's (<see cref="Hosting.ShellHost.Clock"/>).</summary>
         public static CuratedLibrary Computation => ShellBindings.Computation;
         /// <summary>The real machine: its clock (all of <see cref="DateTime"/>, Now included), paths, files, directories, environment, archives.</summary>
-        public static CuratedLibrary Machine => ShellBindings.Machine;
+        public static CuratedLibrary HostMachine => ShellBindings.HostMachine;
         /// <summary>Everything EasyShell binds: what `easy` calls through when it cannot reflect.</summary>
-        public static CuratedLibrary Standard => _standard ??= CuratedLibrary.Combine("Standard", Computation, Machine);
+        public static CuratedLibrary Standard => _standard ??= CuratedLibrary.Combine("Standard", Computation, HostMachine);
         private static CuratedLibrary? _standard;
 
         /// <summary>

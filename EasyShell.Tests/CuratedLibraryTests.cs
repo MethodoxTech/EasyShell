@@ -80,16 +80,16 @@ namespace EasyShell.Tests
         public void ATypeNobodyBoundDoesNotExist()
         {
             Assert.False(ShellCallBinder.CanResolveQualified(Curated, "System.Reflection.Assembly.Load"));
-            Assert.False(ShellCallBinder.CanResolveQualified(ShellLibraries.Pure, "System.IO.File.ReadAllText"));
-            Assert.True(ShellCallBinder.CanResolveQualified(ShellLibraries.Pure, "System.Math.Sqrt"));
+            Assert.False(ShellCallBinder.CanResolveQualified(ShellLibraries.Computation, "System.IO.File.ReadAllText"));
+            Assert.True(ShellCallBinder.CanResolveQualified(ShellLibraries.Computation, "System.Math.Sqrt"));
         }
 
         [Fact]
-        public void PureKnowsNothingOfTheHostsPathsOrClock()
+        public void ComputationKnowsNothingOfTheHostsPathsOrClock()
         {
             // The two things a machine underneath could leak through computation: its separator (CommonUtilities joins with it) and its time. joinpath and getdate are host built-ins instead.
-            Assert.False(ShellCallBinder.CanResolveQualified(ShellLibraries.Pure, "EasyShell.Commands.CommonUtilities.JoinPath"));
-            CuratedType dateTime = (CuratedType)ShellLibraries.Pure.Resolve("System.DateTime")!;
+            Assert.False(ShellCallBinder.CanResolveQualified(ShellLibraries.Computation, "EasyShell.Commands.CommonUtilities.JoinPath"));
+            CuratedType dateTime = (CuratedType)ShellLibraries.Computation.Resolve("System.DateTime")!;
             Assert.Null(dateTime.FindProperty("Now", isStatic: true));
             Assert.Null(dateTime.FindProperty("UtcNow", isStatic: true));
             Assert.Null(dateTime.FindProperty("Today", isStatic: true));
@@ -103,15 +103,15 @@ namespace EasyShell.Tests
         [Fact]
         public void LoadAssemblyIsRefusedBecauseTheSurfaceIsFixed()
         {
-            Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Pure) };
+            Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Computation) };
             EasyShellException e = Assert.Throws<EasyShellException>(() => ScriptHost.Run("""LOADASSEMBLY "System.Text.Json" """, rt));
             Assert.Contains("fixed when it was built", e.Message);
         }
 
         [Fact]
-        public void AScriptRunsTheSameOnAPureHost()
+        public void AScriptRunsTheSameOnAComputationHost()
         {
-            Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Pure) };
+            Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Computation) };
             ScriptResult result = ScriptHost.Run("""
                 print (sqrt 16)
                 print (format "{0}-{1}" "a" 2)
@@ -126,14 +126,14 @@ namespace EasyShell.Tests
         [Fact]
         public void TheHostPolicyStillAppliesOnTopOfACuratedLibrary()
         {
-            Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Pure, _ => false) };
+            Runtime rt = new() { Host = WithLibrary(ShellHost.Default, ShellLibraries.Computation, _ => false) };
             EasyShellException e = Assert.Throws<EasyShellException>(() => ScriptHost.Run("print (sqrt 16)", rt));
             Assert.Contains("not permitted", e.Message);
         }
 
         [Fact]
         public void TheConsoleSwapOfAPipelineKeepsTheLibrary()
-            => Assert.Same(ShellLibraries.Pure, WithLibrary(ShellHost.Default, ShellLibraries.Pure).WithConsole(ShellHost.Default.Console).Library);
+            => Assert.Same(ShellLibraries.Computation, WithLibrary(ShellHost.Default, ShellLibraries.Computation).WithConsole(ShellHost.Default.Console).Library);
         #endregion
 
         #region Parity with reflection
@@ -141,11 +141,11 @@ namespace EasyShell.Tests
         /// Every member of the pure library, called by name through both libraries with arguments made for each of its overloads, must choose the same overload and come back with the same value or the same error.
         /// </summary>
         [Fact]
-        public void EveryPureMemberBehavesAsItsReflectiveTwin()
+        public void EveryComputationMemberBehavesAsItsReflectiveTwin()
         {
             List<string> mismatches = [];
             int calls = 0, answered = 0;
-            foreach (CuratedType type in ShellLibraries.Pure.Types)
+            foreach (CuratedType type in ShellLibraries.Computation.Types)
             {
                 foreach ((string name, bool isStatic, List<Value> args) in CallsFor(type))
                 {

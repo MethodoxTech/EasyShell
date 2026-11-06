@@ -7,23 +7,23 @@ using System.Text.RegularExpressions;
 
 // The curated libraries. Each line binds one type's public members through the source generator, into the library its Library names; ShellBindings is the generated class.
 
-// Pure: computation and nothing else - no file, process, console, environment, host path convention or host clock is reachable, so a sandbox can hand it to any script, and a virtual machine's scripts see nothing of the machine underneath it. The clock is left to the host (`getdate` reads ShellHost.Clock), and so is path joining (`joinpath` uses the host filesystem's separator).
-[assembly: ShellBindType(typeof(object), Library = "Pure")]
-[assembly: ShellBindType(typeof(Math), Library = "Pure")]
-[assembly: ShellBindType(typeof(string), Library = "Pure")]
-[assembly: ShellBindType(typeof(char), Library = "Pure")]
-[assembly: ShellBindType(typeof(bool), Library = "Pure")]
-[assembly: ShellBindType(typeof(int), Library = "Pure")]
-[assembly: ShellBindType(typeof(long), Library = "Pure")]
-[assembly: ShellBindType(typeof(double), Library = "Pure")]
-[assembly: ShellBindType(typeof(DateTime), Library = "Pure", Exclude = ["Now", "UtcNow", "Today"])]
-[assembly: ShellBindType(typeof(TimeSpan), Library = "Pure")]
-[assembly: ShellBindType(typeof(Guid), Library = "Pure")]
-[assembly: ShellBindType(typeof(Convert), Library = "Pure")]
-[assembly: ShellBindType(typeof(Regex), Library = "Pure", StaticOnly = true)]
-[assembly: ShellBindType(typeof(Match), Library = "Pure")]
-[assembly: ShellBindType(typeof(Group), Library = "Pure")]
-[assembly: ShellBindType(typeof(GroupCollection), Library = "Pure")]
+// Computation: working with values and nothing else - no file, process, console, environment, host path convention or host clock is reachable, so a sandbox can hand it to any script, and a virtual machine's scripts see nothing of the machine underneath it. The clock is left to the host (`getdate` reads ShellHost.Clock), and so is path joining (`joinpath` uses the host filesystem's separator).
+[assembly: ShellBindType(typeof(object), Library = "Computation")]
+[assembly: ShellBindType(typeof(Math), Library = "Computation")]
+[assembly: ShellBindType(typeof(string), Library = "Computation")]
+[assembly: ShellBindType(typeof(char), Library = "Computation")]
+[assembly: ShellBindType(typeof(bool), Library = "Computation")]
+[assembly: ShellBindType(typeof(int), Library = "Computation")]
+[assembly: ShellBindType(typeof(long), Library = "Computation")]
+[assembly: ShellBindType(typeof(double), Library = "Computation")]
+[assembly: ShellBindType(typeof(DateTime), Library = "Computation", Exclude = ["Now", "UtcNow", "Today"])]
+[assembly: ShellBindType(typeof(TimeSpan), Library = "Computation")]
+[assembly: ShellBindType(typeof(Guid), Library = "Computation")]
+[assembly: ShellBindType(typeof(Convert), Library = "Computation")]
+[assembly: ShellBindType(typeof(Regex), Library = "Computation", StaticOnly = true)]
+[assembly: ShellBindType(typeof(Match), Library = "Computation")]
+[assembly: ShellBindType(typeof(Group), Library = "Computation")]
+[assembly: ShellBindType(typeof(GroupCollection), Library = "Computation")]
 
 // Machine: what a build script does to the real machine it runs on, beyond the host-routed built-ins. Never for a sandbox.
 [assembly: ShellBindType(typeof(DateTime), Library = "Machine")]
@@ -61,11 +61,11 @@ namespace EasyShell.Binding
         public static bool IsReflectionSupported => RuntimeFeature.IsDynamicCodeSupported && (AppContext.TryGetSwitch(ReflectionSwitch, out bool enabled) ? enabled : true);
 
         /// <summary>Computation only: strings, numbers, dates, conversions, regular expressions - but not the time of day, which is the host's (<see cref="Hosting.ShellHost.Clock"/>).</summary>
-        public static CuratedLibrary Pure => ShellBindings.Pure;
+        public static CuratedLibrary Computation => ShellBindings.Computation;
         /// <summary>The real machine: its clock (all of <see cref="DateTime"/>, Now included), paths, files, directories, environment, archives.</summary>
         public static CuratedLibrary Machine => ShellBindings.Machine;
         /// <summary>Everything EasyShell binds: what `easy` calls through when it cannot reflect.</summary>
-        public static CuratedLibrary Standard => _standard ??= CuratedLibrary.Combine("Standard", Pure, Machine);
+        public static CuratedLibrary Standard => _standard ??= CuratedLibrary.Combine("Standard", Computation, Machine);
         private static CuratedLibrary? _standard;
 
         /// <summary>

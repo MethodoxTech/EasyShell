@@ -94,7 +94,7 @@ namespace EasyShell.Tests
             Assert.Null(dateTime.FindProperty("UtcNow", isStatic: true));
             Assert.Null(dateTime.FindProperty("Today", isStatic: true));
 
-            // Standard, what a Native easy calls, still has them: Machine binds all of DateTime and CommonUtilities.
+            // Standard, what a Native easy calls, still has them: HostMachine binds all of DateTime and CommonUtilities.
             CuratedType full = (CuratedType)ShellLibraries.Standard.Resolve("System.DateTime")!;
             Assert.NotNull(full.FindProperty("Now", isStatic: true));
             Assert.True(ShellCallBinder.CanResolveQualified(ShellLibraries.Standard, "EasyShell.Commands.CommonUtilities.JoinPath"));

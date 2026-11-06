@@ -554,7 +554,7 @@ namespace EasyShell.Tests
         [Fact]
         public void AnAliasTheLibraryCannotServeIsNotACommand()
         {
-            // zip is ZipUtil.CompressArchive, which only the Machine library binds. On a Computation host the alias does not exist, so the name is a program like any other: the machine's own zip if it has one, "command not found" if not - never a complaint about a .NET type the script never named.
+            // zip is ZipUtil.CompressArchive, which only the HostMachine library binds. On a Computation host the alias does not exist, so the name is a program like any other: the machine's own zip if it has one, "command not found" if not - never a complaint about a .NET type the script never named.
             var (rt, _, _, _, procs) = CreateWorld(library: Binding.ShellLibraries.Computation);
 
             Run(rt, """zip "a" "b.zip" """);

@@ -10,7 +10,7 @@ namespace EasyShell.Binding
     /// <remarks>
     /// <para>Its types come from <c>[assembly: ShellBindType(typeof(T))]</c>, which EasyShell's source generator turns into direct calls, so nothing is looked up, loaded or invoked by reflection. A member nobody bound is simply absent - "Type not found" or "Member not found", as if it did not exist - which makes the set an allowlist that cannot be walked around: there is no <c>GetType</c> to start from, and no <c>Assembly</c> to reach.</para>
     ///
-    /// <para>Libraries combine, so a host composes the surface it wants: <see cref="ShellLibraries.Computation"/> for working with values, plus <see cref="ShellLibraries.Machine"/> where scripts may touch the real machine, plus its own generated set.</para>
+    /// <para>Libraries combine, so a host composes the surface it wants: <see cref="ShellLibraries.Computation"/> for working with values, plus <see cref="ShellLibraries.HostMachine"/> where scripts may touch the real machine, plus its own generated set.</para>
     /// </remarks>
     public sealed class CuratedLibrary : IShellLibrary
     {

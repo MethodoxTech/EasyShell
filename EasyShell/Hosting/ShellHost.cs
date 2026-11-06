@@ -34,12 +34,12 @@ namespace EasyShell.Hosting
         public Func<string, bool>? CanInvokeQualified { get; init; }
 
         /// <summary>
-        /// The .NET surface scripts call: the whole runtime by reflection where that works, or a curated library bound at compile time (see <see cref="Binding.ShellLibraries"/>). A sandbox that hands scripts <see cref="Binding.ShellLibraries.Pure"/> has no member to refuse that it did not choose to bind, and a NativeAOT build has no other choice.
+        /// The .NET surface scripts call: the whole runtime by reflection where that works, or a curated library bound at compile time (see <see cref="Binding.ShellLibraries"/>). A sandbox that hands scripts <see cref="Binding.ShellLibraries.Computation"/> has no member to refuse that it did not choose to bind, and a NativeAOT build has no other choice.
         /// </summary>
         public Binding.IShellLibrary Library { get; init; } = Binding.ShellLibraries.Default;
 
         /// <summary>
-        /// The wall clock `getdate` reads. The real one by default; a virtual machine that keeps its own time hands in its own, so a script inside it sees the machine's date rather than the host's - which is also why the curated <see cref="Binding.ShellLibraries.Pure"/> library binds no clock of its own.
+        /// The wall clock `getdate` reads. The real one by default; a virtual machine that keeps its own time hands in its own, so a script inside it sees the machine's date rather than the host's - which is also why the curated <see cref="Binding.ShellLibraries.Computation"/> library binds no clock of its own.
         /// </summary>
         public TimeProvider Clock { get; init; } = TimeProvider.System;
 

@@ -539,10 +539,10 @@ namespace EasyShell.Tests
         }
 
         [Fact]
-        public void OnThePureLibraryTheHostsClockIsTheOnlyClock()
+        public void OnTheComputationLibraryTheHostsClockIsTheOnlyClock()
         {
-            // Pure binds DateTime without Now, UtcNow and Today, so a virtual machine's scripts cannot read the host's time around the machine's own.
-            var (rt, _, console, _, _) = CreateWorld(library: Binding.ShellLibraries.Pure, clock: new StoppedClock(new DateTimeOffset(1999, 6, 15, 12, 0, 0, TimeSpan.Zero)));
+            // Computation binds DateTime without Now, UtcNow and Today, so a virtual machine's scripts cannot read the host's time around the machine's own.
+            var (rt, _, console, _, _) = CreateWorld(library: Binding.ShellLibraries.Computation, clock: new StoppedClock(new DateTimeOffset(1999, 6, 15, 12, 0, 0, TimeSpan.Zero)));
 
             Run(rt, """print (System.DateTime.Month (getdate))""");
             Assert.Equal("6", console.Output[^1]);
@@ -554,8 +554,8 @@ namespace EasyShell.Tests
         [Fact]
         public void AnAliasTheLibraryCannotServeIsNotACommand()
         {
-            // zip is ZipUtil.CompressArchive, which only the Machine library binds. On a Pure host the alias does not exist, so the name is a program like any other: the machine's own zip if it has one, "command not found" if not - never a complaint about a .NET type the script never named.
-            var (rt, _, _, _, procs) = CreateWorld(library: Binding.ShellLibraries.Pure);
+            // zip is ZipUtil.CompressArchive, which only the Machine library binds. On a Computation host the alias does not exist, so the name is a program like any other: the machine's own zip if it has one, "command not found" if not - never a complaint about a .NET type the script never named.
+            var (rt, _, _, _, procs) = CreateWorld(library: Binding.ShellLibraries.Computation);
 
             Run(rt, """zip "a" "b.zip" """);
 

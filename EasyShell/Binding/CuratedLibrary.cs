@@ -10,7 +10,7 @@ namespace EasyShell.Binding
     /// <remarks>
     /// <para>Its types come from <c>[assembly: ShellBindType(typeof(T))]</c>, which EasyShell's source generator turns into direct calls, so nothing is looked up, loaded or invoked by reflection. A member nobody bound is simply absent - "Type not found" or "Member not found", as if it did not exist - which makes the set an allowlist that cannot be walked around: there is no <c>GetType</c> to start from, and no <c>Assembly</c> to reach.</para>
     ///
-    /// <para>Libraries combine, so a host composes the surface it wants: <see cref="ShellLibraries.Pure"/> for computation, plus <see cref="ShellLibraries.Machine"/> where scripts may touch the real machine, plus its own generated set.</para>
+    /// <para>Libraries combine, so a host composes the surface it wants: <see cref="ShellLibraries.Computation"/> for working with values, plus <see cref="ShellLibraries.Machine"/> where scripts may touch the real machine, plus its own generated set.</para>
     /// </remarks>
     public sealed class CuratedLibrary : IShellLibrary
     {
@@ -110,7 +110,7 @@ namespace EasyShell.Binding
     }
 
     /// <summary>
-    /// Binds a type's public members into a curated library: <c>[assembly: ShellBindType(typeof(System.Math), Library = "Pure")]</c>.
+    /// Binds a type's public members into a curated library: <c>[assembly: ShellBindType(typeof(System.Math), Library = "Computation")]</c>.
     /// </summary>
     /// <remarks>
     /// EasyShell's source generator reads this and writes the bindings into the assembly's <c>ShellBindings</c> class, one static property per library name; nothing reads it at run time. Static members are bound as the type declares them, instance members with those it inherits, as reflection's public lookup sees them. A member that cannot be called without reflection - a generic method, a by-ref or by-ref-like parameter, a pointer - or that is marked as needing unreferenced or dynamic code is left out, and <c>GetType</c> is always left out, so a handle can never become a way into the type system.
